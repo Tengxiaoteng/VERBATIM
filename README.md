@@ -77,8 +77,12 @@
 
 <table>
   <tr>
-    <td><img src="screenshots/settings.png" width="380"/><br/><sub>多种识别服务可选</sub></td>
-    <td><img src="screenshots/prompts.png" width="380"/><br/><sub>自定义 LLM 后处理</sub></td>
+    <td><img src="screenshots/service-status.png" width="380"/><br/><sub>服务状态与模型下载源</sub></td>
+    <td><img src="screenshots/hotkeys.png" width="380"/><br/><sub>录音热键与模式切换热键</sub></td>
+  </tr>
+  <tr>
+    <td><img src="screenshots/llm-prompts.png" width="380"/><br/><sub>AI 后处理与提示词模式</sub></td>
+    <td><img src="screenshots/output-preview.png" width="380"/><br/><sub>输出预览：直接输出与逻辑优化</sub></td>
   </tr>
 </table>
 
