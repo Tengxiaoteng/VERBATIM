@@ -164,4 +164,4 @@ flutter test      # 单元测试
 
 ## License
 
-MIT © 2025 VERBATIM Contributors
+MIT © 2025 Tengxiaoteng
