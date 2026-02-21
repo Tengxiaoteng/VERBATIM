@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Flutter build output
+VERBATIM/build/
+VERBATIM/flutter_01.log
+
+# IntelliJ / Android Studio
+*.iml
+.idea/
+
+# Flutter tooling
+VERBATIM/.dart_tool/
+VERBATIM/.flutter-plugins
+VERBATIM/.flutter-plugins-dependencies
+VERBATIM/.pub-cache/
+VERBATIM/pubspec.lock
