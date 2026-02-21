@@ -8,17 +8,24 @@ import tempfile
 
 # Parse --model-dir early so MODELSCOPE_CACHE is set before funasr is imported.
 # funasr/modelscope reads the cache path at import time, so env must be set first.
-def _parse_model_dir_early() -> str | None:
+def _parse_arg_early(flag: str) -> str | None:
     for i, arg in enumerate(sys.argv):
-        if arg == "--model-dir" and i + 1 < len(sys.argv):
+        if arg == flag and i + 1 < len(sys.argv):
             return sys.argv[i + 1]
     return None
 
 
-_early_model_dir = _parse_model_dir_early()
+_early_model_dir = _parse_arg_early("--model-dir")
+_early_hub = (_parse_arg_early("--hub") or "ms").strip().lower()
+if _early_hub not in {"ms", "hf"}:
+    _early_hub = "ms"
+_early_hf_endpoint = (_parse_arg_early("--hf-endpoint") or "").strip()
+
 if _early_model_dir:
     os.makedirs(_early_model_dir, exist_ok=True)
     os.environ["MODELSCOPE_CACHE"] = _early_model_dir
+if _early_hf_endpoint:
+    os.environ["HF_ENDPOINT"] = _early_hf_endpoint
 
 from contextlib import asynccontextmanager
 
@@ -70,11 +77,15 @@ model = None
 def get_model():
     global model
     if model is None:
+        logger.info("Model hub=%s", _early_hub)
+        if _early_hf_endpoint:
+            logger.info("HF endpoint=%s", _early_hf_endpoint)
         model = AutoModel(
             model="paraformer-zh",
             vad_model="fsmn-vad",
             punc_model="ct-punc",
             disable_update=True,
+            hub=_early_hub,
         )
     return model
 
@@ -185,6 +196,17 @@ if __name__ == "__main__":
         "--model-dir",
         default=None,
         help="Directory used as MODELSCOPE_CACHE (must match early parse)",
+    )
+    parser.add_argument(
+        "--hub",
+        default="ms",
+        choices=["ms", "hf"],
+        help="Model hub backend: ms (ModelScope) or hf (HuggingFace)",
+    )
+    parser.add_argument(
+        "--hf-endpoint",
+        default=None,
+        help="Custom HuggingFace endpoint, e.g. https://hf-mirror.com",
     )
     args = parser.parse_args()
 

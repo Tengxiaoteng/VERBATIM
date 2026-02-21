@@ -24,6 +24,17 @@ def main():
         required=True,
         help="Directory to store downloaded models (used as MODELSCOPE_CACHE)",
     )
+    parser.add_argument(
+        "--hub",
+        default="ms",
+        choices=["ms", "hf"],
+        help="Model hub backend: ms (ModelScope) or hf (HuggingFace)",
+    )
+    parser.add_argument(
+        "--hf-endpoint",
+        default="",
+        help="Custom HuggingFace endpoint, e.g. https://hf-mirror.com",
+    )
     args = parser.parse_args()
 
     model_dir = os.path.expanduser(args.model_dir)
@@ -31,12 +42,17 @@ def main():
 
     # Must be set before importing funasr so modelscope uses our directory.
     os.environ["MODELSCOPE_CACHE"] = model_dir
+    if args.hf_endpoint:
+        os.environ["HF_ENDPOINT"] = args.hf_endpoint
 
     flag_file = os.path.join(model_dir, ".downloaded")
 
     print("DOWNLOAD_START", flush=True)
     print(f"模型目录: {model_dir}", flush=True)
-    print("注意: 首次下载约 300~500 MB，请保持网络畅通。", flush=True)
+    print(f"下载源: {'ModelScope' if args.hub == 'ms' else 'HuggingFace'}", flush=True)
+    if args.hf_endpoint:
+        print(f"HF_ENDPOINT: {args.hf_endpoint}", flush=True)
+    print("注意: 首次下载约 300~500 MB，慢速网络可能需要 5~15 分钟。", flush=True)
     print("", flush=True)
 
     try:
@@ -49,6 +65,7 @@ def main():
             vad_model="fsmn-vad",
             punc_model="ct-punc",
             disable_update=True,
+            hub=args.hub,
         )
 
         # Write sentinel file to mark successful download.

@@ -3,6 +3,8 @@ import 'prompt_preset.dart';
 class AppSettings {
   final String hotkeyKey;
   final List<String> hotkeyModifiers;
+  final String modeSwitchHotkeyKey;
+  final List<String> modeSwitchHotkeyModifiers;
   final String asrBaseUrl;
   final String asrProviderKey;
   final String asrApiKey;
@@ -17,10 +19,14 @@ class AppSettings {
   final List<PromptPreset> customPrompts;
   final bool autoStartServer;
   final bool setupCompleted;
+  final String modelDownloadSource;
+  final String modelDownloadMirrorUrl;
 
   const AppSettings({
     required this.hotkeyKey,
     required this.hotkeyModifiers,
+    required this.modeSwitchHotkeyKey,
+    required this.modeSwitchHotkeyModifiers,
     this.asrBaseUrl = 'http://localhost:10095',
     this.asrProviderKey = 'local',
     this.asrApiKey = '',
@@ -35,12 +41,16 @@ class AppSettings {
     required this.customPrompts,
     this.autoStartServer = true,
     this.setupCompleted = false,
+    this.modelDownloadSource = 'auto',
+    this.modelDownloadMirrorUrl = '',
   });
 
   factory AppSettings.defaults() {
     return const AppSettings(
-      hotkeyKey: 'Space',
-      hotkeyModifiers: ['alt'],
+      hotkeyKey: 'Fn',
+      hotkeyModifiers: [],
+      modeSwitchHotkeyKey: 'Key M',
+      modeSwitchHotkeyModifiers: ['alt'],
       llmEnabled: false,
       llmProviderKey: 'deepseek',
       llmApiKey: '',
@@ -53,13 +63,19 @@ class AppSettings {
 
   factory AppSettings.fromJson(Map<String, dynamic> json) {
     return AppSettings(
-      hotkeyKey: json['hotkeyKey'] as String? ?? 'Space',
-      hotkeyModifiers: (json['hotkeyModifiers'] as List<dynamic>?)
+      hotkeyKey: json['hotkeyKey'] as String? ?? 'Fn',
+      hotkeyModifiers:
+          (json['hotkeyModifiers'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          [],
+      modeSwitchHotkeyKey: json['modeSwitchHotkeyKey'] as String? ?? 'Key M',
+      modeSwitchHotkeyModifiers:
+          (json['modeSwitchHotkeyModifiers'] as List<dynamic>?)
               ?.map((e) => e as String)
               .toList() ??
           ['alt'],
-      asrBaseUrl:
-          json['asrBaseUrl'] as String? ?? 'http://localhost:10095',
+      asrBaseUrl: json['asrBaseUrl'] as String? ?? 'http://localhost:10095',
       asrProviderKey: json['asrProviderKey'] as String? ?? 'local',
       asrApiKey: json['asrApiKey'] as String? ?? '',
       asrModel: json['asrModel'] as String? ?? '',
@@ -70,12 +86,15 @@ class AppSettings {
       llmBaseUrl: json['llmBaseUrl'] as String? ?? '',
       llmModel: json['llmModel'] as String? ?? 'deepseek-chat',
       activePromptId: json['activePromptId'] as String? ?? 'direct',
-      customPrompts: (json['customPrompts'] as List<dynamic>?)
+      customPrompts:
+          (json['customPrompts'] as List<dynamic>?)
               ?.map((e) => PromptPreset.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
       autoStartServer: json['autoStartServer'] as bool? ?? true,
       setupCompleted: json['setupCompleted'] as bool? ?? false,
+      modelDownloadSource: json['modelDownloadSource'] as String? ?? 'auto',
+      modelDownloadMirrorUrl: json['modelDownloadMirrorUrl'] as String? ?? '',
     );
   }
 
@@ -83,6 +102,8 @@ class AppSettings {
     return {
       'hotkeyKey': hotkeyKey,
       'hotkeyModifiers': hotkeyModifiers,
+      'modeSwitchHotkeyKey': modeSwitchHotkeyKey,
+      'modeSwitchHotkeyModifiers': modeSwitchHotkeyModifiers,
       'asrBaseUrl': asrBaseUrl,
       'asrProviderKey': asrProviderKey,
       'asrApiKey': asrApiKey,
@@ -97,12 +118,16 @@ class AppSettings {
       'customPrompts': customPrompts.map((e) => e.toJson()).toList(),
       'autoStartServer': autoStartServer,
       'setupCompleted': setupCompleted,
+      'modelDownloadSource': modelDownloadSource,
+      'modelDownloadMirrorUrl': modelDownloadMirrorUrl,
     };
   }
 
   AppSettings copyWith({
     String? hotkeyKey,
     List<String>? hotkeyModifiers,
+    String? modeSwitchHotkeyKey,
+    List<String>? modeSwitchHotkeyModifiers,
     String? asrBaseUrl,
     String? asrProviderKey,
     String? asrApiKey,
@@ -117,10 +142,15 @@ class AppSettings {
     List<PromptPreset>? customPrompts,
     bool? autoStartServer,
     bool? setupCompleted,
+    String? modelDownloadSource,
+    String? modelDownloadMirrorUrl,
   }) {
     return AppSettings(
       hotkeyKey: hotkeyKey ?? this.hotkeyKey,
       hotkeyModifiers: hotkeyModifiers ?? this.hotkeyModifiers,
+      modeSwitchHotkeyKey: modeSwitchHotkeyKey ?? this.modeSwitchHotkeyKey,
+      modeSwitchHotkeyModifiers:
+          modeSwitchHotkeyModifiers ?? this.modeSwitchHotkeyModifiers,
       asrBaseUrl: asrBaseUrl ?? this.asrBaseUrl,
       asrProviderKey: asrProviderKey ?? this.asrProviderKey,
       asrApiKey: asrApiKey ?? this.asrApiKey,
@@ -135,6 +165,9 @@ class AppSettings {
       customPrompts: customPrompts ?? this.customPrompts,
       autoStartServer: autoStartServer ?? this.autoStartServer,
       setupCompleted: setupCompleted ?? this.setupCompleted,
+      modelDownloadSource: modelDownloadSource ?? this.modelDownloadSource,
+      modelDownloadMirrorUrl:
+          modelDownloadMirrorUrl ?? this.modelDownloadMirrorUrl,
     );
   }
 }

@@ -12,15 +12,17 @@ class TrayService with TrayListener {
     _trayManager.addListener(this);
 
     await _trayManager.setIcon('assets/tray_icon.png');
-    await _trayManager.setToolTip('VERBATIM - Option+Space 语音输入');
+    await _trayManager.setToolTip('VERBATIM - 按住录音键语音输入');
 
-    final menu = Menu(items: [
-      MenuItem(key: 'about', label: 'VERBATIM v2.1', disabled: true),
-      MenuItem.separator(),
-      MenuItem(key: 'settings', label: '显示设置'),
-      MenuItem.separator(),
-      MenuItem(key: 'quit', label: '退出'),
-    ]);
+    final menu = Menu(
+      items: [
+        MenuItem(key: 'about', label: 'VERBATIM v2.1', disabled: true),
+        MenuItem.separator(),
+        MenuItem(key: 'settings', label: '显示设置'),
+        MenuItem.separator(),
+        MenuItem(key: 'quit', label: '退出'),
+      ],
+    );
     await _trayManager.setContextMenu(menu);
   }
 

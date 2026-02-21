@@ -14,11 +14,7 @@ class HotkeyService {
     PhysicalKeyboardKey key = PhysicalKeyboardKey.space,
     List<HotKeyModifier> modifiers = const [HotKeyModifier.alt],
   }) async {
-    _hotKey = HotKey(
-      key: key,
-      modifiers: modifiers,
-      scope: HotKeyScope.system,
-    );
+    _hotKey = HotKey(key: key, modifiers: modifiers, scope: HotKeyScope.system);
     await hotKeyManager.register(
       _hotKey!,
       keyDownHandler: (_) {
@@ -30,7 +26,9 @@ class HotkeyService {
         onKeyUp();
       },
     );
-    debugPrint('[Hotkey] Registered ${modifiers.map((m) => m.name).join("+")}+${key.debugName}');
+    debugPrint(
+      '[Hotkey] Registered ${modifiers.map((m) => m.name).join("+")}+${key.debugName}',
+    );
   }
 
   Future<void> reRegister({
@@ -59,6 +57,7 @@ class HotkeyService {
   static final Map<String, PhysicalKeyboardKey> _keyMap = {
     for (final entry in <MapEntry<String, PhysicalKeyboardKey>>[
       MapEntry('Space', PhysicalKeyboardKey.space),
+      MapEntry('Fn', PhysicalKeyboardKey.fn),
       MapEntry('Key A', PhysicalKeyboardKey.keyA),
       MapEntry('Key B', PhysicalKeyboardKey.keyB),
       MapEntry('Key C', PhysicalKeyboardKey.keyC),
@@ -121,7 +120,37 @@ class HotkeyService {
   /// Converts a debug name string (e.g. "Space", "Key A") to a [PhysicalKeyboardKey].
   /// Falls back to [PhysicalKeyboardKey.space] if not found.
   static PhysicalKeyboardKey parseKey(String debugName) {
-    return _keyMap[debugName] ?? PhysicalKeyboardKey.space;
+    final raw = debugName.trim();
+    final direct = _keyMap[raw];
+    if (direct != null) return direct;
+
+    final upper = raw.toUpperCase();
+
+    // Accept single-letter forms like "E" (from keyLabel/debugName variants).
+    if (upper.length == 1 &&
+        upper.codeUnitAt(0) >= 65 &&
+        upper.codeUnitAt(0) <= 90) {
+      final normalized = 'Key $upper';
+      return _keyMap[normalized] ?? PhysicalKeyboardKey.space;
+    }
+
+    // Accept single-digit forms like "1".
+    if (upper.length == 1 &&
+        upper.codeUnitAt(0) >= 48 &&
+        upper.codeUnitAt(0) <= 57) {
+      final normalized = 'Digit $upper';
+      return _keyMap[normalized] ?? PhysicalKeyboardKey.space;
+    }
+
+    // Accept lowercase "key e" / "digit 1" / "fn".
+    final titleCase = raw.isEmpty
+        ? raw
+        : '${raw[0].toUpperCase()}${raw.substring(1).toLowerCase()}';
+    final byTitleCase = _keyMap[titleCase];
+    if (byTitleCase != null) return byTitleCase;
+    if (upper == 'FN') return PhysicalKeyboardKey.fn;
+
+    return PhysicalKeyboardKey.space;
   }
 
   /// Converts a list of modifier name strings (e.g. ["alt","shift"])

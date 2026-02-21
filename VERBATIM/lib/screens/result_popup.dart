@@ -7,10 +7,20 @@ import '../theme/app_theme.dart';
 
 /// 自动粘贴失败时的备用弹窗 — 毛玻璃风格，带复制动画
 class ResultPopup extends StatefulWidget {
-  final String text;
+  final String rawText;
+  final String processedText;
+  final String modeTitle;
+  final bool structured;
   final VoidCallback onDismiss;
 
-  const ResultPopup({super.key, required this.text, required this.onDismiss});
+  const ResultPopup({
+    super.key,
+    required this.rawText,
+    required this.processedText,
+    required this.modeTitle,
+    required this.structured,
+    required this.onDismiss,
+  });
 
   @override
   State<ResultPopup> createState() => _ResultPopupState();
@@ -20,7 +30,7 @@ class _ResultPopupState extends State<ResultPopup> {
   bool _copied = false;
 
   Future<void> _handleCopy() async {
-    await Clipboard.setData(ClipboardData(text: widget.text));
+    await Clipboard.setData(ClipboardData(text: widget.processedText));
     if (!mounted) return;
     setState(() => _copied = true);
     await Future.delayed(const Duration(milliseconds: 1500));
@@ -31,9 +41,12 @@ class _ResultPopupState extends State<ResultPopup> {
 
   @override
   Widget build(BuildContext context) {
+    final sceneLabel = widget.structured ? '场景 B' : '场景 A';
+    final resultLabel = widget.structured ? '结构化输出：' : '粘贴结果：';
+
     return Center(
       child: Container(
-        margin: const EdgeInsets.all(10),
+        margin: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(AppTheme.radiusLG),
           border: Border.all(color: AppTheme.borderDefault, width: 0.8),
@@ -53,9 +66,9 @@ class _ResultPopupState extends State<ResultPopup> {
                 filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
                 child: Container(
                   color: const Color(0xC8EAF0F9),
-                  padding: const EdgeInsets.all(18),
+                  padding: const EdgeInsets.all(22),
                   child: Column(
-                    mainAxisSize: MainAxisSize.min,
+                    mainAxisSize: MainAxisSize.max,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // 状态行
@@ -63,42 +76,30 @@ class _ResultPopupState extends State<ResultPopup> {
                         children: [
                           Container(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
+                              horizontal: 10,
+                              vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: AppTheme.successGreen.withValues(
-                                alpha: 0.12,
-                              ),
+                              color: const Color(0xFF0F1D59),
                               borderRadius: BorderRadius.circular(6),
-                              border: Border.all(
-                                color: AppTheme.successGreen.withValues(
-                                  alpha: 0.28,
-                                ),
-                                width: 0.8,
+                            ),
+                            child: Text(
+                              sceneLabel,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Container(
-                                  width: 6,
-                                  height: 6,
-                                  decoration: const BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: AppTheme.successGreen,
-                                  ),
-                                ),
-                                const SizedBox(width: 5),
-                                const Text(
-                                  '识别完成',
-                                  style: TextStyle(
-                                    color: AppTheme.successGreen,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            widget.modeTitle,
+                            style: const TextStyle(
+                              color: AppTheme.textPrimary,
+                              fontSize: 30,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.5,
                             ),
                           ),
                           const Spacer(),
@@ -111,7 +112,7 @@ class _ResultPopupState extends State<ResultPopup> {
                                 width: 20,
                                 height: 20,
                                 decoration: BoxDecoration(
-                                  color: const Color(0x1A2060C8),
+                                  color: const Color(0x142060C8),
                                   borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: const Icon(
@@ -124,19 +125,103 @@ class _ResultPopupState extends State<ResultPopup> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
-
-                      // 识别文字
-                      SelectableText(
-                        widget.text,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: AppTheme.textPrimary,
-                          height: 1.5,
+                      const SizedBox(height: 16),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: const Color(0x0F2060C8),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: AppTheme.borderSubtle,
+                                    width: 0.8,
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      '你说：',
+                                      style: TextStyle(
+                                        color: AppTheme.textMuted,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Expanded(
+                                      child: SingleChildScrollView(
+                                        child: SelectableText(
+                                          '「${widget.rawText}」',
+                                          style: const TextStyle(
+                                            fontSize: 18,
+                                            color: Color(0xFF586179),
+                                            height: 1.55,
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: widget.structured
+                                      ? const Color(0xFF0D0F14)
+                                      : const Color(0xFFF1F4FA),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: widget.structured
+                                        ? const Color(0x401F7AE0)
+                                        : AppTheme.borderSubtle,
+                                    width: 0.8,
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      resultLabel,
+                                      style: TextStyle(
+                                        color: widget.structured
+                                            ? const Color(0x80FFFFFF)
+                                            : AppTheme.textMuted,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Expanded(
+                                      child: SingleChildScrollView(
+                                        child: SelectableText(
+                                          widget.processedText,
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            color: widget.structured
+                                                ? Colors.white
+                                                : AppTheme.textPrimary,
+                                            height: 1.55,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                        maxLines: 3,
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 16),
 
                       // 操作按钮行
                       Row(
@@ -196,7 +281,7 @@ class _ResultPopupState extends State<ResultPopup> {
                                         color: _copied
                                             ? AppTheme.successGreen
                                             : Colors.white,
-                                        fontSize: 12.5,
+                                        fontSize: 13,
                                         fontWeight: FontWeight.w500,
                                       ),
                                     ),

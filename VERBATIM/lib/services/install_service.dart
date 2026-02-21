@@ -84,10 +84,7 @@ class InstallService {
   }) async {
     // Resolve brew executable path.
     String? brewPath;
-    for (final candidate in [
-      '/opt/homebrew/bin/brew',
-      '/usr/local/bin/brew',
-    ]) {
+    for (final candidate in ['/opt/homebrew/bin/brew', '/usr/local/bin/brew']) {
       if (await File(candidate).exists()) {
         brewPath = candidate;
         break;
@@ -246,10 +243,10 @@ class InstallService {
     for (final py in candidates) {
       if (!await File(py).exists()) continue;
       try {
-        final result = await Process.run(
-          py,
-          ['-c', 'import funasr; import fastapi; import uvicorn'],
-        );
+        final result = await Process.run(py, [
+          '-c',
+          'import funasr; import fastapi; import uvicorn',
+        ]);
         if (result.exitCode == 0) return py;
       } catch (_) {}
     }
@@ -273,12 +270,7 @@ class InstallService {
     }
 
     // Use python -m pip to ensure we install into the correct environment.
-    final packages = [
-      'funasr',
-      'fastapi',
-      'uvicorn',
-      'python-multipart',
-    ];
+    final packages = ['funasr', 'fastapi', 'uvicorn', 'python-multipart'];
     final args = ['-m', 'pip', 'install', ...packages];
 
     onOutput('> $python ${args.join(' ')}\n');
@@ -344,6 +336,9 @@ class InstallService {
   /// Streams output through [onOutput]. Returns true on success.
   Future<bool> downloadModels({
     required void Function(String line) onOutput,
+    void Function(double progress, String label)? onProgress,
+    String source = 'auto',
+    String hfMirrorUrl = '',
   }) async {
     final python = await _findPythonWithFunasr();
     if (python == null) {
@@ -353,25 +348,51 @@ class InstallService {
 
     final scriptPath = await _resolveDownloadScript();
     final modelDir = await getModelDir();
+    final sourceConfig = _resolveModelDownloadConfig(
+      source: source,
+      hfMirrorUrl: hfMirrorUrl,
+    );
+    if (!sourceConfig.valid) {
+      onOutput('Error: ${sourceConfig.errorMessage}');
+      return false;
+    }
 
-    onOutput('> $python $scriptPath --model-dir $modelDir\n');
+    final args = <String>[
+      scriptPath,
+      '--model-dir',
+      modelDir,
+      '--hub',
+      sourceConfig.hub,
+    ];
+    if (sourceConfig.hfEndpoint != null) {
+      args.addAll(['--hf-endpoint', sourceConfig.hfEndpoint!]);
+    }
+    final env = <String, String>{'PYTHONUNBUFFERED': '1', 'PATH': _mergedPath};
+    if (sourceConfig.hfEndpoint != null) {
+      env['HF_ENDPOINT'] = sourceConfig.hfEndpoint!;
+    }
+
+    onOutput(
+      '[下载源] ${sourceConfig.label}'
+      '${sourceConfig.hfEndpoint != null ? ' (${sourceConfig.hfEndpoint})' : ''}\n',
+    );
+    onOutput('> $python ${args.join(' ')}\n');
 
     try {
-      final process = await Process.start(
-        python,
-        [scriptPath, '--model-dir', modelDir],
-        environment: {'PYTHONUNBUFFERED': '1', 'PATH': _mergedPath},
-      );
+      final process = await Process.start(python, args, environment: env);
 
-      process.stdout
-          .transform(const SystemEncoding().decoder)
-          .listen((data) => onOutput(data));
-      process.stderr
-          .transform(const SystemEncoding().decoder)
-          .listen((data) => onOutput(data));
+      process.stdout.transform(const SystemEncoding().decoder).listen((data) {
+        onOutput(data);
+        _parseDownloadProgressChunk(data, onProgress);
+      });
+      process.stderr.transform(const SystemEncoding().decoder).listen((data) {
+        onOutput(data);
+        _parseDownloadProgressChunk(data, onProgress);
+      });
 
       final exitCode = await process.exitCode;
       if (exitCode == 0) {
+        onProgress?.call(1.0, '100% · 下载完成');
         return true;
       } else {
         onOutput('\n模型下载失败 (exit code: $exitCode)');
@@ -381,6 +402,87 @@ class InstallService {
       onOutput('\n运行下载脚本失败: $e');
       return false;
     }
+  }
+
+  _ModelDownloadSourceConfig _resolveModelDownloadConfig({
+    required String source,
+    required String hfMirrorUrl,
+  }) {
+    switch (source) {
+      case 'hf_official':
+        return const _ModelDownloadSourceConfig(
+          valid: true,
+          label: 'HuggingFace 官方',
+          hub: 'hf',
+        );
+      case 'hf_mirror':
+        return const _ModelDownloadSourceConfig(
+          valid: true,
+          label: 'HuggingFace 镜像',
+          hub: 'hf',
+          hfEndpoint: 'https://hf-mirror.com',
+        );
+      case 'custom_hf_mirror':
+        final endpoint = hfMirrorUrl.trim();
+        if (endpoint.isEmpty) {
+          return const _ModelDownloadSourceConfig(
+            valid: false,
+            label: '自定义镜像',
+            hub: 'hf',
+            errorMessage: '已选择自定义镜像，但镜像 URL 为空。',
+          );
+        }
+        if (!endpoint.startsWith('http://') &&
+            !endpoint.startsWith('https://')) {
+          return const _ModelDownloadSourceConfig(
+            valid: false,
+            label: '自定义镜像',
+            hub: 'hf',
+            errorMessage: '镜像 URL 必须以 http:// 或 https:// 开头。',
+          );
+        }
+        return _ModelDownloadSourceConfig(
+          valid: true,
+          label: '自定义 HuggingFace 镜像',
+          hub: 'hf',
+          hfEndpoint: endpoint,
+        );
+      case 'auto':
+      default:
+        return const _ModelDownloadSourceConfig(
+          valid: true,
+          label: 'ModelScope 默认源',
+          hub: 'ms',
+        );
+    }
+  }
+
+  /// Parse tqdm-like model download progress from process output chunks.
+  void _parseDownloadProgressChunk(
+    String raw,
+    void Function(double progress, String label)? onProgress,
+  ) {
+    if (onProgress == null) return;
+
+    final clean = raw
+        .replaceAll(RegExp(r'\x1B\[[0-9;]*[mABCDGHJKSTf]'), '')
+        .trim();
+    final pctMatch = RegExp(r'(\d+)%\|').firstMatch(clean);
+    if (pctMatch == null) return;
+
+    final pct = int.parse(pctMatch.group(1)!);
+    final progress = pct.clamp(0, 100) / 100.0;
+
+    final sizeMatch = RegExp(
+      r'\|\s*([\d.]+\s*\w+)/([\d.]+\s*\w+)',
+    ).firstMatch(clean);
+    final speedMatch = RegExp(r'([\d.]+\s*[kKMGT]?B/s)').firstMatch(clean);
+    final label =
+        '$pct%'
+        '${sizeMatch != null ? ' · ${sizeMatch.group(1)}/${sizeMatch.group(2)}' : ''}'
+        '${speedMatch != null ? ' · ${speedMatch.group(1)}' : ''}';
+
+    onProgress(progress, label);
   }
 
   // ── Check all ─────────────────────────────────────────────────────
@@ -403,4 +505,20 @@ class InstallService {
       modelsDownloaded: results[4],
     );
   }
+}
+
+class _ModelDownloadSourceConfig {
+  final bool valid;
+  final String label;
+  final String hub;
+  final String? hfEndpoint;
+  final String? errorMessage;
+
+  const _ModelDownloadSourceConfig({
+    required this.valid,
+    required this.label,
+    required this.hub,
+    this.hfEndpoint,
+    this.errorMessage,
+  });
 }

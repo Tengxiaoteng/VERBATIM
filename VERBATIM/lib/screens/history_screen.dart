@@ -27,8 +27,7 @@ class HistoryScreen extends StatefulWidget {
 class _HistoryScreenState extends State<HistoryScreen> {
   String? _copiedId;
 
-  List<HistoryEntry> get _sorted =>
-      [...widget.entries].reversed.toList();
+  List<HistoryEntry> get _sorted => [...widget.entries].reversed.toList();
 
   String _formatTime(DateTime dt) {
     final now = DateTime.now();
@@ -157,32 +156,25 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   Widget _buildPanel() {
-    return Container(
-      margin: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.borderDefault, width: 0.8),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(15.2),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
-          child: Container(
-            decoration: const BoxDecoration(
-              gradient: AppTheme.backgroundGradient,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHeader(),
-                const Divider(
-                  height: 1,
-                  thickness: 0.5,
-                  color: AppTheme.borderDefault,
-                ),
-                Expanded(child: _buildList()),
-              ],
-            ),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: AppTheme.backgroundGradient,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeader(),
+              const Divider(
+                height: 1,
+                thickness: 0.5,
+                color: AppTheme.borderDefault,
+              ),
+              Expanded(child: _buildList()),
+            ],
           ),
         ),
       ),
@@ -204,10 +196,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 decoration: BoxDecoration(
                   color: const Color(0x0D2060C8),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: AppTheme.borderSubtle,
-                    width: 0.8,
-                  ),
+                  border: Border.all(color: AppTheme.borderSubtle, width: 0.8),
                 ),
                 child: const Icon(
                   Icons.arrow_back_ios_new_rounded,
@@ -245,10 +234,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 onTap: _showClearConfirm,
                 child: const Text(
                   '清空',
-                  style: TextStyle(
-                    color: AppTheme.textMuted,
-                    fontSize: 12.5,
-                  ),
+                  style: TextStyle(color: AppTheme.textMuted, fontSize: 12.5),
                 ),
               ),
             ),
@@ -287,7 +273,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return ListView.separated(
       padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
       itemCount: entries.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 6),
+      separatorBuilder: (context, index) => const SizedBox(height: 6),
       itemBuilder: (context, index) => _buildEntryCard(entries[index]),
     );
   }
@@ -296,8 +282,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final displayText = entry.processedText.isNotEmpty
         ? entry.processedText
         : entry.rawText;
-    final hasProcessed = entry.processedText.isNotEmpty &&
-        entry.processedText != entry.rawText;
+    final hasProcessed =
+        entry.processedText.isNotEmpty && entry.processedText != entry.rawText;
     final isCopied = _copiedId == entry.id;
 
     return Container(
@@ -315,10 +301,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             children: [
               Text(
                 _formatTime(entry.timestamp),
-                style: const TextStyle(
-                  color: AppTheme.textMuted,
-                  fontSize: 11,
-                ),
+                style: const TextStyle(color: AppTheme.textMuted, fontSize: 11),
               ),
               const SizedBox(width: 8),
               if (entry.durationSeconds > 0)
@@ -375,9 +358,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 child: GestureDetector(
                   onTap: () => _copyText(entry),
                   child: Icon(
-                    isCopied
-                        ? Icons.check_rounded
-                        : Icons.copy_rounded,
+                    isCopied ? Icons.check_rounded : Icons.copy_rounded,
                     size: 14,
                     color: isCopied
                         ? AppTheme.successGreen
@@ -413,7 +394,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
           // 原文预览（AI处理后才显示）
           if (hasProcessed) ...[
             const SizedBox(height: 8),
-            const Divider(height: 1, thickness: 0.5, color: AppTheme.borderSubtle),
+            const Divider(
+              height: 1,
+              thickness: 0.5,
+              color: AppTheme.borderSubtle,
+            ),
             const SizedBox(height: 6),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,

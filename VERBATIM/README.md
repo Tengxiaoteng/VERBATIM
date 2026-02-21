@@ -2,7 +2,7 @@
 
 > 说话，文字直接出现在光标处。无需切换窗口，无需动手。
 
-[![⬇ 下载 macOS 安装包](https://img.shields.io/badge/⬇_下载-macOS_v1.0.0-2060C8?style=for-the-badge)](https://github.com/Tengxiaoteng/VERBATIM/releases/latest/download/VERBATIM-v1.0.0-macos.zip)
+[![⬇ 下载 macOS 安装包](https://img.shields.io/badge/⬇_下载-macOS_v1.0.1-2060C8?style=for-the-badge)](https://github.com/Tengxiaoteng/VERBATIM/releases/latest/download/VERBATIM-v1.0.1-macos.zip)
 
 ![Platform](https://img.shields.io/badge/platform-macOS-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.38%2B-blue)
@@ -14,7 +14,7 @@
 
 **打字太慢** — 说话比打字快 3 倍。长段文字、会议记录、备忘录，直接说出来，实时转文字。
 
-**手不离键盘** — 在任何应用里按住 `Option+Space`，松开后文字已经粘贴好，不用切窗口、不用点击任何按钮。
+**手不离键盘** — 在任何应用里按住 `Fn`（可自定义），松开后文字已经粘贴好，不用切窗口、不用点击任何按钮。
 
 **中文识别准** — 支持讯飞、SiliconFlow 等专为中文优化的服务，标点自动加，说完即可用。
 
@@ -90,20 +90,22 @@
 1. brew install sox
 2. 下载解压 → VERBATIM.app 拖入应用程序
 3. 首次启动按提示授权麦克风 + 辅助功能
-4. 按住 Option+Space 说话，松开自动粘贴
+4. 按住 Fn 说话，松开自动粘贴（可在设置改成任意热键）
 ```
 
 ---
 
 ## 支持的 ASR 服务
 
+推荐顺序：`讯飞 API（首推）` → 其他云端 API → `本地 FunASR（离线备选）`
+
 | 服务 | 凭证格式 | 获取地址 |
 |------|----------|----------|
-| 本地 FunASR（离线） | 无需 Key | — |
-| OpenAI Whisper | `sk-...` | platform.openai.com |
-| Groq | `gsk_...` | console.groq.com |
-| SiliconFlow | `sf-...` | siliconflow.cn |
-| 讯飞 iFlytek | `AppID:APIKey:APISecret` | console.xfyun.cn |
+| 讯飞 iFlytek（推荐） | `AppID:APIKey:APISecret` | [console.xfyun.cn](https://console.xfyun.cn) |
+| SiliconFlow | `sf-...` | [siliconflow.cn](https://siliconflow.cn) |
+| OpenAI Whisper | `sk-...` | [platform.openai.com](https://platform.openai.com) |
+| Groq | `gsk_...` | [console.groq.com](https://console.groq.com) |
+| 本地 FunASR（离线备选） | 无需 Key | — |
 | 自定义 OpenAI 兼容 | 任意 | — |
 
 ---

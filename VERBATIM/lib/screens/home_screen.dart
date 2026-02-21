@@ -78,14 +78,14 @@ class _RecordingOverlayState extends State<RecordingOverlay>
                   ),
                 ]
               : widget.isProcessing
-                  ? [
-                      BoxShadow(
-                        color: AppTheme.accentPrimary.withValues(alpha: 0.10),
-                        blurRadius: 20,
-                        spreadRadius: -2,
-                      ),
-                    ]
-                  : null,
+              ? [
+                  BoxShadow(
+                    color: AppTheme.accentPrimary.withValues(alpha: 0.10),
+                    blurRadius: 20,
+                    spreadRadius: -2,
+                  ),
+                ]
+              : null,
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(AppTheme.radiusXL - 1),
@@ -102,8 +102,8 @@ class _RecordingOverlayState extends State<RecordingOverlay>
                   child: widget.errorMessage != null
                       ? _buildError()
                       : widget.isProcessing
-                          ? _buildProcessing()
-                          : _buildRecording(),
+                      ? _buildProcessing()
+                      : _buildRecording(),
                 ),
                 // 顶部高光
                 Positioned(
@@ -280,15 +280,88 @@ class _RecordingOverlayState extends State<RecordingOverlay>
         Flexible(
           child: Text(
             widget.errorMessage!,
-            style: const TextStyle(
-              color: AppTheme.recordingRed,
-              fontSize: 13,
-            ),
+            style: const TextStyle(color: AppTheme.recordingRed, fontSize: 13),
             overflow: TextOverflow.ellipsis,
             maxLines: 2,
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 模式切换提示条
+class ModeSwitchOverlay extends StatelessWidget {
+  final String message;
+
+  const ModeSwitchOverlay({super.key, required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(child: ModeSwitchHintCard(message: message));
+  }
+}
+
+/// 模式切换提示卡片（可在浮窗或页面右下角复用）
+class ModeSwitchHintCard extends StatelessWidget {
+  final String message;
+
+  const ModeSwitchHintCard({super.key, required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(AppTheme.radiusXL),
+        border: Border.all(
+          color: AppTheme.accentPrimary.withValues(alpha: 0.4),
+          width: 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.accentPrimary.withValues(alpha: 0.14),
+            blurRadius: 20,
+            spreadRadius: -3,
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppTheme.radiusXL - 1),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
+          child: Container(
+            color: const Color(0xCCEAF0F9),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    gradient: AppTheme.accentGradient,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.swap_horiz_rounded,
+                    size: 12,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  message,
+                  style: const TextStyle(
+                    color: AppTheme.textPrimary,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

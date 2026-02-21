@@ -61,6 +61,18 @@ class AppDelegate: FlutterAppDelegate {
         }
       }
 
+      switch writableTextFocusState() {
+      case .notWritable:
+        result([
+          "success": false,
+          "permissionDenied": false,
+          "error": "NO_WRITABLE_FOCUS"
+        ])
+        return
+      case .writable, .unknown:
+        break
+      }
+
       if postCommandV() {
         result([
           "success": true,
@@ -112,5 +124,71 @@ class AppDelegate: FlutterAppDelegate {
     keyDown.post(tap: .cghidEventTap)
     keyUp.post(tap: .cghidEventTap)
     return true
+  }
+
+  private enum WritableFocusState {
+    case writable
+    case notWritable
+    case unknown
+  }
+
+  private func writableTextFocusState() -> WritableFocusState {
+    let systemWide = AXUIElementCreateSystemWide()
+    var focusedRef: CFTypeRef?
+    let focusedStatus = AXUIElementCopyAttributeValue(
+      systemWide,
+      kAXFocusedUIElementAttribute as CFString,
+      &focusedRef
+    )
+    guard focusedStatus == .success else {
+      return .unknown
+    }
+    guard let focused = focusedRef else {
+      return .notWritable
+    }
+
+    let focusedElement = focused as! AXUIElement
+    if hasAttribute(focusedElement, attribute: kAXSelectedTextRangeAttribute as CFString) {
+      return .writable
+    }
+
+    var valueSettable = DarwinBoolean(false)
+    let settableStatus = AXUIElementIsAttributeSettable(
+      focusedElement,
+      kAXValueAttribute as CFString,
+      &valueSettable
+    )
+    if settableStatus == .success && valueSettable.boolValue {
+      return .writable
+    }
+
+    var roleRef: CFTypeRef?
+    let roleStatus = AXUIElementCopyAttributeValue(
+      focusedElement,
+      kAXRoleAttribute as CFString,
+      &roleRef
+    )
+    if roleStatus == .success, let role = roleRef as? String {
+      let writableRoles: Set<String> = [
+        kAXTextFieldRole as String,
+        kAXTextAreaRole as String,
+        "AXSearchField",
+        kAXComboBoxRole as String,
+      ]
+      if writableRoles.contains(role) {
+        return .writable
+      }
+    }
+
+    return .notWritable
+  }
+
+  private func hasAttribute(_ element: AXUIElement, attribute: CFString) -> Bool {
+    var namesRef: CFArray?
+    let status = AXUIElementCopyAttributeNames(element, &namesRef)
+    guard status == .success, let names = namesRef as? [String] else {
+      return false
+    }
+    return names.contains(attribute as String)
   }
 }

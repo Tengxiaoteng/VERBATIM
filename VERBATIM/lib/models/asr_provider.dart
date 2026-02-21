@@ -15,11 +15,18 @@ class AsrProvider {
 
   static final builtIn = <AsrProvider>[
     const AsrProvider(
-      key: 'local',
-      name: '本地 FunASR',
-      endpoint: '',
-      defaultModel: '',
-      requiresApiKey: false,
+      key: 'iflytek',
+      name: '讯飞 iFlytek（推荐）',
+      endpoint: 'wss://iat.xf-yun.com/v1',
+      defaultModel: 'zh_cn',
+      requiresApiKey: true,
+    ),
+    const AsrProvider(
+      key: 'siliconflow',
+      name: 'SiliconFlow (中文优化)',
+      endpoint: 'https://api.siliconflow.cn/v1/audio/transcriptions',
+      defaultModel: 'FunAudioLLM/SenseVoiceSmall',
+      requiresApiKey: true,
     ),
     const AsrProvider(
       key: 'openai',
@@ -36,18 +43,11 @@ class AsrProvider {
       requiresApiKey: true,
     ),
     const AsrProvider(
-      key: 'siliconflow',
-      name: 'SiliconFlow (中文优化)',
-      endpoint: 'https://api.siliconflow.cn/v1/audio/transcriptions',
-      defaultModel: 'FunAudioLLM/SenseVoiceSmall',
-      requiresApiKey: true,
-    ),
-    const AsrProvider(
-      key: 'iflytek',
-      name: '讯飞 iFlytek（中文优秀）',
-      endpoint: 'wss://iat.xf-yun.com/v1',
-      defaultModel: 'zh_cn',
-      requiresApiKey: true,
+      key: 'local',
+      name: '本地 FunASR（离线备选）',
+      endpoint: '',
+      defaultModel: '',
+      requiresApiKey: false,
     ),
     const AsrProvider(
       key: 'custom',

@@ -10,6 +10,18 @@ import 'package:http/http.dart' as http;
 
 enum FunasrServerStatus { stopped, starting, loadingModels, ready, error }
 
+class _ModelDownloadSourceConfig {
+  final String label;
+  final String hub;
+  final String? hfEndpoint;
+
+  const _ModelDownloadSourceConfig({
+    required this.label,
+    required this.hub,
+    this.hfEndpoint,
+  });
+}
+
 class FunasrServerService {
   final ValueChanged<FunasrServerStatus> onStatusChanged;
   final ValueChanged<String?> onErrorChanged;
@@ -145,10 +157,10 @@ class FunasrServerService {
 
       // Check that required packages are importable.
       try {
-        final result = await Process.run(
-          py,
-          ['-c', 'import funasr; import fastapi; import uvicorn'],
-        );
+        final result = await Process.run(py, [
+          '-c',
+          'import funasr; import fastapi; import uvicorn',
+        ]);
         if (result.exitCode == 0) return py;
       } catch (_) {}
     }
@@ -157,8 +169,20 @@ class FunasrServerService {
   }
 
   /// Start the FunASR server process.
-  Future<void> start({String baseUrl = 'http://localhost:10095'}) async {
+  Future<void> start({
+    String baseUrl = 'http://localhost:10095',
+    String modelDownloadSource = 'auto',
+    String modelDownloadMirrorUrl = '',
+  }) async {
     _port = _parsePort(baseUrl);
+    final sourceConfig = _resolveModelDownloadConfig(
+      source: modelDownloadSource,
+      mirrorUrl: modelDownloadMirrorUrl,
+    );
+    debugPrint('[FunasrServer] Model source: ${sourceConfig.label}');
+    if (sourceConfig.hfEndpoint != null) {
+      debugPrint('[FunasrServer] HF endpoint: ${sourceConfig.hfEndpoint}');
+    }
 
     // If a server is already running on this port, just mark ready.
     if (await _isPortInUse()) {
@@ -192,11 +216,23 @@ class FunasrServerService {
 
     // Launch process.
     try {
-      _process = await Process.start(
-        python,
-        [scriptPath, '--port', '$_port', '--model-dir', modelDir],
-        environment: {'PYTHONUNBUFFERED': '1'},
-      );
+      final args = <String>[
+        scriptPath,
+        '--port',
+        '$_port',
+        '--model-dir',
+        modelDir,
+        '--hub',
+        sourceConfig.hub,
+      ];
+      if (sourceConfig.hfEndpoint != null) {
+        args.addAll(['--hf-endpoint', sourceConfig.hfEndpoint!]);
+      }
+      final env = <String, String>{'PYTHONUNBUFFERED': '1'};
+      if (sourceConfig.hfEndpoint != null) {
+        env['HF_ENDPOINT'] = sourceConfig.hfEndpoint!;
+      }
+      _process = await Process.start(python, args, environment: env);
     } catch (e) {
       _setError('启动 Python 进程失败: $e');
       _setStatus(FunasrServerStatus.error);
@@ -239,13 +275,53 @@ class FunasrServerService {
     _startHealthPolling();
   }
 
+  _ModelDownloadSourceConfig _resolveModelDownloadConfig({
+    required String source,
+    required String mirrorUrl,
+  }) {
+    switch (source) {
+      case 'hf_official':
+        return const _ModelDownloadSourceConfig(
+          label: 'HuggingFace 官方',
+          hub: 'hf',
+        );
+      case 'hf_mirror':
+        return const _ModelDownloadSourceConfig(
+          label: 'HuggingFace 镜像',
+          hub: 'hf',
+          hfEndpoint: 'https://hf-mirror.com',
+        );
+      case 'custom_hf_mirror':
+        final endpoint = mirrorUrl.trim();
+        if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
+          return _ModelDownloadSourceConfig(
+            label: '自定义 HuggingFace 镜像',
+            hub: 'hf',
+            hfEndpoint: endpoint,
+          );
+        }
+        return const _ModelDownloadSourceConfig(
+          label: 'ModelScope 默认源（自定义镜像无效，已回退）',
+          hub: 'ms',
+        );
+      case 'auto':
+      default:
+        return const _ModelDownloadSourceConfig(
+          label: 'ModelScope 默认源',
+          hub: 'ms',
+        );
+    }
+  }
+
   void _startHealthPolling() {
     var elapsed = 0;
     const interval = 2;
     const timeoutSec = 300; // 5 minutes
 
     _healthTimer?.cancel();
-    _healthTimer = Timer.periodic(const Duration(seconds: interval), (timer) async {
+    _healthTimer = Timer.periodic(const Duration(seconds: interval), (
+      timer,
+    ) async {
       elapsed += interval;
       if (elapsed > timeoutSec) {
         timer.cancel();
@@ -281,18 +357,22 @@ class FunasrServerService {
     proc.kill(ProcessSignal.sigterm);
 
     // Wait up to 5 seconds, then SIGKILL.
-    final exited = await proc.exitCode
-        .timeout(const Duration(seconds: 5), onTimeout: () {
-      proc.kill(ProcessSignal.sigkill);
-      return -1;
-    });
+    final exited = await proc.exitCode.timeout(
+      const Duration(seconds: 5),
+      onTimeout: () {
+        proc.kill(ProcessSignal.sigkill);
+        return -1;
+      },
+    );
     debugPrint('[FunasrServer] Server stopped (exit: $exited)');
   }
 
   /// Parse tqdm-style download progress from stderr output.
   void _parseDownloadProgress(String raw) {
     // Strip ANSI escape codes (e.g. cursor-up \x1B[A used by tqdm).
-    final clean = raw.replaceAll(RegExp(r'\x1B\[[0-9;]*[mABCDGHJKSTf]'), '').trim();
+    final clean = raw
+        .replaceAll(RegExp(r'\x1B\[[0-9;]*[mABCDGHJKSTf]'), '')
+        .trim();
     final pctMatch = RegExp(r'(\d+)%\|').firstMatch(clean);
     if (pctMatch == null) return;
 
@@ -300,9 +380,12 @@ class FunasrServerService {
     _downloadProgress = pct / 100.0;
 
     // Build a short human-readable label.
-    final sizeMatch = RegExp(r'\|\s*([\d.]+\s*\w+)/([\d.]+\s*\w+)').firstMatch(clean);
+    final sizeMatch = RegExp(
+      r'\|\s*([\d.]+\s*\w+)/([\d.]+\s*\w+)',
+    ).firstMatch(clean);
     final speedMatch = RegExp(r'([\d.]+\s*[kKMGT]?B/s)').firstMatch(clean);
-    final label = '$pct%'
+    final label =
+        '$pct%'
         '${sizeMatch != null ? ' · ${sizeMatch.group(1)}/${sizeMatch.group(2)}' : ''}'
         '${speedMatch != null ? ' · ${speedMatch.group(1)}' : ''}';
 

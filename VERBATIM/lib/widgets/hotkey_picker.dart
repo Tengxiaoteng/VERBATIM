@@ -1,5 +1,9 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+import '../theme/app_theme.dart';
 
 /// A widget for recording and displaying custom keyboard shortcuts.
 ///
@@ -10,6 +14,7 @@ class HotkeyPicker extends StatefulWidget {
   final List<String> currentModifiers;
   final void Function(String key, List<String> modifiers) onHotkeyChanged;
   final ValueChanged<bool>? onListeningStateChanged;
+  final String description;
 
   const HotkeyPicker({
     super.key,
@@ -17,6 +22,7 @@ class HotkeyPicker extends StatefulWidget {
     required this.currentModifiers,
     required this.onHotkeyChanged,
     this.onListeningStateChanged,
+    this.description = '按住快捷键开始录音',
   });
 
   @override
@@ -38,6 +44,13 @@ class _HotkeyPickerState extends State<HotkeyPicker> {
   // ── Modifier symbols ──────────────────────────────────────────────
 
   static const _modifierSymbols = {
+    'alt': '⌥',
+    'shift': '⇧',
+    'control': '⌃',
+    'meta': '⌘',
+  };
+
+  static const _modifierLongNames = {
     'alt': '⌥ Option',
     'shift': '⇧ Shift',
     'control': '⌃ Control',
@@ -45,22 +58,59 @@ class _HotkeyPickerState extends State<HotkeyPicker> {
   };
 
   static String _modifierSymbol(String mod) =>
-      _modifierSymbols[mod.toLowerCase()] ?? mod;
-
-  /// Converts a key debugName and modifier list into a display string.
-  static String hotkeyDisplayString(String key, List<String> modifiers) {
-    final parts = modifiers.map(_modifierSymbol).toList();
-    parts.add(_keyLabel(key));
-    return parts.join(' + ');
-  }
+      _modifierLongNames[mod.toLowerCase()] ?? mod;
 
   static String _keyLabel(String debugName) {
     // Common key name overrides for display
     final lower = debugName.toLowerCase();
     if (lower == 'space') return 'Space';
+    if (lower == 'fn') return 'Fn';
     if (lower.startsWith('key ')) return debugName.substring(4).toUpperCase();
     if (lower.startsWith('digit ')) return debugName.substring(6);
     return debugName;
+  }
+
+  String _debugNameForKey(PhysicalKeyboardKey key) {
+    if (key == PhysicalKeyboardKey.fn) return 'Fn';
+    return key.debugName ?? 'Unknown';
+  }
+
+  bool _isFnEvent(KeyEvent event) {
+    return event.physicalKey == PhysicalKeyboardKey.fn ||
+        event.logicalKey == LogicalKeyboardKey.fn ||
+        (event.logicalKey.debugName ?? '').toLowerCase() == 'fn';
+  }
+
+  bool _isLogicalModifier(LogicalKeyboardKey key) {
+    return key == LogicalKeyboardKey.altLeft ||
+        key == LogicalKeyboardKey.altRight ||
+        key == LogicalKeyboardKey.shiftLeft ||
+        key == LogicalKeyboardKey.shiftRight ||
+        key == LogicalKeyboardKey.controlLeft ||
+        key == LogicalKeyboardKey.controlRight ||
+        key == LogicalKeyboardKey.metaLeft ||
+        key == LogicalKeyboardKey.metaRight;
+  }
+
+  String? _resolveCapturedKey(KeyEvent event) {
+    if (_isFnEvent(event)) return 'Fn';
+
+    final physical = _debugNameForKey(event.physicalKey);
+    if (physical.isNotEmpty && physical != 'Unknown') {
+      return physical;
+    }
+
+    final logicalName = event.logicalKey.debugName ?? '';
+    if (logicalName.isNotEmpty) {
+      return logicalName;
+    }
+
+    final label = event.logicalKey.keyLabel;
+    if (label.isNotEmpty) {
+      return label.length == 1 ? label.toUpperCase() : label;
+    }
+
+    return null;
   }
 
   // ── Listening mode ────────────────────────────────────────────────
@@ -95,20 +145,25 @@ class _HotkeyPickerState extends State<HotkeyPicker> {
     if (!_listening) return KeyEventResult.ignored;
     if (event is! KeyDownEvent) return KeyEventResult.handled;
 
-    final key = event.physicalKey;
+    if (_isModifierKey(event.physicalKey) ||
+        _isLogicalModifier(event.logicalKey)) {
+      return KeyEventResult.handled;
+    }
 
-    // Ignore standalone modifier presses
-    if (_isModifierKey(key)) return KeyEventResult.handled;
+    final keyName = _resolveCapturedKey(event);
+    if (keyName == null) return KeyEventResult.handled;
 
     final modifiers = <String>[];
-    final keyboard = HardwareKeyboard.instance;
-    if (keyboard.isAltPressed) modifiers.add('alt');
-    if (keyboard.isShiftPressed) modifiers.add('shift');
-    if (keyboard.isControlPressed) modifiers.add('control');
-    if (keyboard.isMetaPressed) modifiers.add('meta');
+    if (keyName != 'Fn') {
+      final keyboard = HardwareKeyboard.instance;
+      if (keyboard.isAltPressed) modifiers.add('alt');
+      if (keyboard.isShiftPressed) modifiers.add('shift');
+      if (keyboard.isControlPressed) modifiers.add('control');
+      if (keyboard.isMetaPressed) modifiers.add('meta');
+    }
 
     setState(() {
-      _capturedKey = key.debugName ?? 'Unknown';
+      _capturedKey = keyName;
       _capturedModifiers = modifiers;
     });
 
@@ -134,50 +189,102 @@ class _HotkeyPickerState extends State<HotkeyPicker> {
       focusNode: _focusNode,
       onKeyEvent: _handleKeyEvent,
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
+        duration: AppTheme.dNormal,
         width: double.infinity,
-        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: const Color(0xFF2A2A2A),
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMD),
           border: Border.all(
             color: _listening
-                ? Colors.blueAccent.withValues(alpha: 0.6)
-                : Colors.transparent,
-            width: 1.5,
+                ? AppTheme.accentPrimary.withValues(alpha: 0.35)
+                : AppTheme.borderSubtle,
+            width: _listening ? 1.1 : 0.8,
+          ),
+          boxShadow: _listening
+              ? [
+                  BoxShadow(
+                    color: AppTheme.accentPrimary.withValues(alpha: 0.16),
+                    blurRadius: 16,
+                    spreadRadius: -4,
+                  ),
+                ]
+              : null,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(AppTheme.radiusMD - 0.8),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: _listening
+                      ? [
+                          AppTheme.accentPrimary.withValues(alpha: 0.08),
+                          Colors.white.withValues(alpha: 0.55),
+                        ]
+                      : [
+                          Colors.white.withValues(alpha: 0.46),
+                          Colors.white.withValues(alpha: 0.32),
+                        ],
+                ),
+              ),
+              child: _listening ? _buildListeningMode() : _buildDisplayMode(),
+            ),
           ),
         ),
-        child: _listening ? _buildListeningMode() : _buildDisplayMode(),
       ),
     );
   }
 
   Widget _buildDisplayMode() {
-    final display =
-        hotkeyDisplayString(widget.currentKey, widget.currentModifiers);
+    final parts = _hotkeyParts(widget.currentKey, widget.currentModifiers);
+
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Icon(Icons.keyboard, size: 18, color: Colors.white54),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            display,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
+        Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppTheme.accentPrimary.withValues(alpha: 0.10),
+            border: Border.all(
+              color: AppTheme.accentPrimary.withValues(alpha: 0.20),
+              width: 0.8,
             ),
           ),
-        ),
-        TextButton(
-          onPressed: _startListening,
-          style: TextButton.styleFrom(
-            foregroundColor: Colors.blueAccent,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            minimumSize: Size.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          child: const Icon(
+            Icons.keyboard_rounded,
+            size: 15,
+            color: AppTheme.accentPrimary,
           ),
-          child: const Text('修改', style: TextStyle(fontSize: 13)),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                widget.description,
+                style: const TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 7),
+              _buildHotkeyCaps(parts),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+        _actionButton(
+          label: '修改',
+          onPressed: _startListening,
+          isPrimary: false,
         ),
       ],
     );
@@ -185,59 +292,138 @@ class _HotkeyPickerState extends State<HotkeyPicker> {
 
   Widget _buildListeningMode() {
     final hasCapture = _capturedKey != null;
+    final capturedParts = hasCapture
+        ? _hotkeyParts(_capturedKey!, _capturedModifiers)
+        : <String>[];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
         if (!hasCapture)
-          const Text(
-            '请按下新的快捷键组合...',
-            style: TextStyle(
-              color: Colors.blueAccent,
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-            ),
+          const Row(
+            children: [
+              Icon(
+                Icons.radio_button_checked_rounded,
+                size: 11,
+                color: AppTheme.accentPrimary,
+              ),
+              SizedBox(width: 6),
+              Text(
+                '请按下新的快捷键组合...',
+                style: TextStyle(
+                  color: AppTheme.accentPrimary,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
           )
         else
-          Text(
-            hotkeyDisplayString(_capturedKey!, _capturedModifiers),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+          _buildHotkeyCaps(capturedParts, active: true),
         const SizedBox(height: 12),
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            TextButton(
-              onPressed: _cancelListening,
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.white54,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: const Text('取消', style: TextStyle(fontSize: 13)),
-            ),
+            _actionButton(label: '取消', onPressed: _cancelListening),
             const SizedBox(width: 8),
-            TextButton(
+            _actionButton(
+              label: '确认',
               onPressed: hasCapture ? _confirmCapture : null,
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.blueAccent,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: const Text('确认', style: TextStyle(fontSize: 13)),
+              isPrimary: true,
             ),
           ],
         ),
       ],
+    );
+  }
+
+  List<String> _hotkeyParts(String key, List<String> modifiers) {
+    final parts = modifiers
+        .map((m) => _modifierSymbols[m.toLowerCase()] ?? _modifierSymbol(m))
+        .toList();
+    parts.add(_keyLabel(key));
+    return parts;
+  }
+
+  Widget _buildHotkeyCaps(List<String> parts, {bool active = false}) {
+    if (parts.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Wrap(
+      spacing: 5,
+      runSpacing: 5,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: List.generate(parts.length * 2 - 1, (index) {
+        if (index.isOdd) {
+          return Text(
+            '+',
+            style: const TextStyle(
+              color: AppTheme.textTertiary,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          );
+        }
+
+        final part = parts[index ~/ 2];
+        final isMainKey = index ~/ 2 == parts.length - 1;
+        final background = isMainKey
+            ? AppTheme.accentPrimary.withValues(alpha: active ? 0.18 : 0.13)
+            : Colors.white.withValues(alpha: active ? 0.55 : 0.42);
+        final borderColor = isMainKey
+            ? AppTheme.accentPrimary.withValues(alpha: 0.35)
+            : AppTheme.borderDefault;
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: borderColor, width: 0.8),
+          ),
+          child: Text(
+            part,
+            style: TextStyle(
+              color: isMainKey ? AppTheme.accentPrimary : AppTheme.textPrimary,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget _actionButton({
+    required String label,
+    required VoidCallback? onPressed,
+    bool isPrimary = false,
+  }) {
+    return TextButton(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        foregroundColor: isPrimary ? Colors.white : AppTheme.textSecondary,
+        backgroundColor: isPrimary
+            ? AppTheme.accentPrimary.withValues(alpha: 0.85)
+            : Colors.white.withValues(alpha: 0.35),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(
+            color: isPrimary
+                ? AppTheme.accentPrimary.withValues(alpha: 0.55)
+                : AppTheme.borderDefault,
+            width: 0.8,
+          ),
+        ),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500),
+      ),
     );
   }
 }

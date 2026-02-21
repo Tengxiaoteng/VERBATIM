@@ -51,16 +51,24 @@ class _VerbatimAppState extends State<VerbatimApp> {
   final _llmService = LlmService();
   final _installService = InstallService();
   final _historyService = HistoryService();
-  late final HotkeyService _hotkeyService;
+  late final HotkeyService _recordHotkeyService;
+  late final HotkeyService _modeHotkeyService;
   late final TrayService _trayService;
   late final FunasrServerService _funasrServer;
 
   late AppSettings _settings;
   AppStatus _status = AppStatus.idle;
   String _resultText = '';
+  String _rawResultText = '';
+  String _resultModeId = 'direct';
   String? _errorMessage;
   Timer? _timer;
+  Timer? _modeHintTimer;
   int _recordSeconds = 0;
+  bool _modeHotkeyPressed = false;
+  bool _modeHintVisible = false;
+  bool _modeHintInline = false;
+  String _modeHintText = '';
   bool _settingsVisible = false;
   bool _historyVisible = false;
   bool _showSetupWizard = false;
@@ -77,15 +85,20 @@ class _VerbatimAppState extends State<VerbatimApp> {
   List<HistoryEntry> _historyEntries = [];
 
   bool get _isLocalAsr => _settings.asrProviderKey == 'local';
+  static const List<String> _quickModeIds = ['direct', 'logic', 'code'];
 
   @override
   void initState() {
     super.initState();
     _settings = widget.initialSettings;
     _asrApi = AsrApiService(baseUrl: _settings.asrBaseUrl);
-    _hotkeyService = HotkeyService(
+    _recordHotkeyService = HotkeyService(
       onKeyDown: _onHotkeyDown,
       onKeyUp: _onHotkeyUp,
+    );
+    _modeHotkeyService = HotkeyService(
+      onKeyDown: _onModeHotkeyDown,
+      onKeyUp: _onModeHotkeyUp,
     );
     _trayService = TrayService(
       onToggleSettings: _toggleSettings,
@@ -111,7 +124,9 @@ class _VerbatimAppState extends State<VerbatimApp> {
   @override
   void dispose() {
     _timer?.cancel();
-    _hotkeyService.dispose();
+    _modeHintTimer?.cancel();
+    _recordHotkeyService.dispose();
+    _modeHotkeyService.dispose();
     _trayService.dispose();
     _recorder.dispose();
     _funasrServer.dispose();
@@ -130,9 +145,7 @@ class _VerbatimAppState extends State<VerbatimApp> {
       try {
         _iflytekAsrApi = IflytekAsrService.fromCombinedKey(
           settings.asrApiKey,
-          language: settings.asrModel.isNotEmpty
-              ? settings.asrModel
-              : 'zh_cn',
+          language: settings.asrModel.isNotEmpty ? settings.asrModel : 'zh_cn',
         );
       } catch (_) {}
       return;
@@ -156,10 +169,7 @@ class _VerbatimAppState extends State<VerbatimApp> {
   Future<void> _init() async {
     _historyEntries = await _historyService.load();
     await _trayService.init();
-    await _hotkeyService.register(
-      key: HotkeyService.parseKey(_settings.hotkeyKey),
-      modifiers: HotkeyService.parseModifiers(_settings.hotkeyModifiers),
-    );
+    await _registerHotkeys();
 
     // Build cloud ASR service if configured
     _buildCloudAsrService(_settings);
@@ -177,7 +187,11 @@ class _VerbatimAppState extends State<VerbatimApp> {
     // Normal launch: start server (local only), do a silent permission check.
     if (_isLocalAsr) {
       if (_settings.autoStartServer) {
-        _funasrServer.start(baseUrl: _settings.asrBaseUrl);
+        _funasrServer.start(
+          baseUrl: _settings.asrBaseUrl,
+          modelDownloadSource: _settings.modelDownloadSource,
+          modelDownloadMirrorUrl: _settings.modelDownloadMirrorUrl,
+        );
       } else {
         _checkServerHealth();
       }
@@ -205,7 +219,11 @@ class _VerbatimAppState extends State<VerbatimApp> {
 
   Future<void> _restartServer() async {
     await _funasrServer.stop();
-    _funasrServer.start(baseUrl: _settings.asrBaseUrl);
+    _funasrServer.start(
+      baseUrl: _settings.asrBaseUrl,
+      modelDownloadSource: _settings.modelDownloadSource,
+      modelDownloadMirrorUrl: _settings.modelDownloadMirrorUrl,
+    );
   }
 
   Future<void> _checkServerHealth() async {
@@ -215,23 +233,58 @@ class _VerbatimAppState extends State<VerbatimApp> {
 
   void _quit() {
     _timer?.cancel();
-    _hotkeyService.dispose();
+    _modeHintTimer?.cancel();
+    _recordHotkeyService.dispose();
+    _modeHotkeyService.dispose();
     _trayService.dispose();
     _recorder.dispose();
     _funasrServer.dispose();
     exit(0);
   }
 
+  Future<void> _registerHotkeys() async {
+    try {
+      await _recordHotkeyService.register(
+        key: HotkeyService.parseKey(_settings.hotkeyKey),
+        modifiers: HotkeyService.parseModifiers(_settings.hotkeyModifiers),
+      );
+    } catch (e) {
+      debugPrint('[Hotkey] Failed to register record hotkey: $e');
+    }
+
+    final sameCombination =
+        _settings.hotkeyKey == _settings.modeSwitchHotkeyKey &&
+        _settings.hotkeyModifiers.join(',') ==
+            _settings.modeSwitchHotkeyModifiers.join(',');
+    if (sameCombination) {
+      debugPrint('[Hotkey] Mode hotkey skipped: same as record hotkey');
+      return;
+    }
+
+    try {
+      await _modeHotkeyService.register(
+        key: HotkeyService.parseKey(_settings.modeSwitchHotkeyKey),
+        modifiers: HotkeyService.parseModifiers(
+          _settings.modeSwitchHotkeyModifiers,
+        ),
+      );
+    } catch (e) {
+      debugPrint('[Hotkey] Failed to register mode hotkey: $e');
+    }
+  }
+
+  Future<void> _unregisterHotkeys() async {
+    await _recordHotkeyService.unregister();
+    await _modeHotkeyService.unregister();
+  }
+
   // ── Hotkey listening state (temporarily unregister while picking) ──
 
   void _onHotkeyListeningStateChanged(bool listening) {
     if (listening) {
-      _hotkeyService.unregister();
+      unawaited(_unregisterHotkeys());
     } else {
-      _hotkeyService.register(
-        key: HotkeyService.parseKey(_settings.hotkeyKey),
-        modifiers: HotkeyService.parseModifiers(_settings.hotkeyModifiers),
-      );
+      unawaited(_registerHotkeys());
     }
   }
 
@@ -239,17 +292,22 @@ class _VerbatimAppState extends State<VerbatimApp> {
 
   Future<void> _onSettingsChanged(AppSettings newSettings) async {
     final oldSettings = _settings;
-    final hotkeyChanged =
+    final recordHotkeyChanged =
         newSettings.hotkeyKey != oldSettings.hotkeyKey ||
         newSettings.hotkeyModifiers.join(',') !=
             oldSettings.hotkeyModifiers.join(',');
+    final modeHotkeyChanged =
+        newSettings.modeSwitchHotkeyKey != oldSettings.modeSwitchHotkeyKey ||
+        newSettings.modeSwitchHotkeyModifiers.join(',') !=
+            oldSettings.modeSwitchHotkeyModifiers.join(',');
 
     final asrUrlChanged = newSettings.asrBaseUrl != oldSettings.asrBaseUrl;
     final autoStartChanged =
         newSettings.autoStartServer != oldSettings.autoStartServer;
     final asrProviderChanged =
         newSettings.asrProviderKey != oldSettings.asrProviderKey;
-    final cloudAsrChanged = asrProviderChanged ||
+    final cloudAsrChanged =
+        asrProviderChanged ||
         newSettings.asrApiKey != oldSettings.asrApiKey ||
         newSettings.asrModel != oldSettings.asrModel ||
         newSettings.asrCustomUrl != oldSettings.asrCustomUrl;
@@ -273,7 +331,11 @@ class _VerbatimAppState extends State<VerbatimApp> {
           _serverStatus != FunasrServerStatus.ready &&
           _serverStatus != FunasrServerStatus.starting &&
           _serverStatus != FunasrServerStatus.loadingModels) {
-        _funasrServer.start(baseUrl: newSettings.asrBaseUrl);
+        _funasrServer.start(
+          baseUrl: newSettings.asrBaseUrl,
+          modelDownloadSource: newSettings.modelDownloadSource,
+          modelDownloadMirrorUrl: newSettings.modelDownloadMirrorUrl,
+        );
       } else {
         _checkServerHealth();
       }
@@ -295,7 +357,11 @@ class _VerbatimAppState extends State<VerbatimApp> {
           _serverStatus != FunasrServerStatus.ready &&
           _serverStatus != FunasrServerStatus.starting &&
           _serverStatus != FunasrServerStatus.loadingModels) {
-        _funasrServer.start(baseUrl: newSettings.asrBaseUrl);
+        _funasrServer.start(
+          baseUrl: newSettings.asrBaseUrl,
+          modelDownloadSource: newSettings.modelDownloadSource,
+          modelDownloadMirrorUrl: newSettings.modelDownloadMirrorUrl,
+        );
       } else if (!newSettings.autoStartServer &&
           (_serverStatus == FunasrServerStatus.starting ||
               _serverStatus == FunasrServerStatus.loadingModels)) {
@@ -303,10 +369,19 @@ class _VerbatimAppState extends State<VerbatimApp> {
       }
     }
 
-    if (hotkeyChanged) {
-      await _hotkeyService.reRegister(
+    if (recordHotkeyChanged) {
+      await _recordHotkeyService.reRegister(
         key: HotkeyService.parseKey(newSettings.hotkeyKey),
         modifiers: HotkeyService.parseModifiers(newSettings.hotkeyModifiers),
+      );
+    }
+
+    if (modeHotkeyChanged) {
+      await _modeHotkeyService.reRegister(
+        key: HotkeyService.parseKey(newSettings.modeSwitchHotkeyKey),
+        modifiers: HotkeyService.parseModifiers(
+          newSettings.modeSwitchHotkeyModifiers,
+        ),
       );
     }
   }
@@ -401,7 +476,8 @@ class _VerbatimAppState extends State<VerbatimApp> {
     // Silent check only — no system dialogs, no permission prompts.
     await _refreshPermissionStatus();
 
-    final needsGuide = _recAvailable != true ||
+    final needsGuide =
+        _recAvailable != true ||
         _microphoneGranted != true ||
         _accessibilityGranted != true;
     if (needsGuide) {
@@ -421,7 +497,11 @@ class _VerbatimAppState extends State<VerbatimApp> {
     // Now start the server (local only) and do a silent permission check.
     if (_isLocalAsr) {
       if (_settings.autoStartServer) {
-        _funasrServer.start(baseUrl: _settings.asrBaseUrl);
+        _funasrServer.start(
+          baseUrl: _settings.asrBaseUrl,
+          modelDownloadSource: _settings.modelDownloadSource,
+          modelDownloadMirrorUrl: _settings.modelDownloadMirrorUrl,
+        );
       } else {
         _checkServerHealth();
       }
@@ -433,26 +513,70 @@ class _VerbatimAppState extends State<VerbatimApp> {
   }
 
   void _onSetupSkip() {
-    _onSetupComplete();
+    unawaited(_onSetupComplete());
   }
 
   // ── Hotkey callbacks ──────────────────────────────────────────────
 
   void _onHotkeyDown() {
     if (_status != AppStatus.idle) return;
-    _startRecording();
+    unawaited(_startRecording());
   }
 
   void _onHotkeyUp() {
     if (_status != AppStatus.recording) return;
-    _stopAndTranscribe();
+    unawaited(_stopAndTranscribe());
   }
+
+  void _onModeHotkeyDown() {
+    if (_status != AppStatus.idle || _modeHotkeyPressed) return;
+    _modeHotkeyPressed = true;
+    unawaited(_switchToNextMode());
+  }
+
+  void _onModeHotkeyUp() {
+    _modeHotkeyPressed = false;
+  }
+
+  Future<void> _switchToNextMode() async {
+    if (_quickModeIds.isEmpty) return;
+    final currentIndex = _quickModeIds.indexOf(_settings.activePromptId);
+    final nextIndex = currentIndex >= 0
+        ? (currentIndex + 1) % _quickModeIds.length
+        : 0;
+    final nextModeId = _quickModeIds[nextIndex];
+
+    final updated = _settings.copyWith(activePromptId: nextModeId);
+    if (!mounted) return;
+    setState(() => _settings = updated);
+    await widget.settingsService.save(updated);
+
+    final modeName = _modeNameById(nextModeId);
+    await _showModeHint('已切换模式：$modeName');
+  }
+
+  String _modeNameById(String id) {
+    final prompts = [...PromptPreset.defaults, ..._settings.customPrompts];
+    for (final p in prompts) {
+      if (p.id == id) return p.name;
+    }
+    return '直接输出';
+  }
+
+  bool _isStructuredMode(String id) => id == 'logic' || id == 'code';
 
   // ── Recording flow ────────────────────────────────────────────────
 
   Future<void> _startRecording() async {
     if (_status == AppStatus.recording) return;
     _timer?.cancel();
+    _modeHintTimer?.cancel();
+    if (_modeHintVisible && mounted) {
+      setState(() {
+        _modeHintVisible = false;
+        _modeHintInline = false;
+      });
+    }
 
     await _refreshPermissionStatus();
 
@@ -575,8 +699,10 @@ class _VerbatimAppState extends State<VerbatimApp> {
           processedText: textToPaste,
           durationSeconds: _recordSeconds,
         );
-        final updatedHistory =
-            await _historyService.addEntry(_historyEntries, entry);
+        final updatedHistory = await _historyService.addEntry(
+          _historyEntries,
+          entry,
+        );
         if (mounted) setState(() => _historyEntries = updatedHistory);
 
         if (pasteResult.success) {
@@ -591,7 +717,9 @@ class _VerbatimAppState extends State<VerbatimApp> {
           if (pasteResult.permissionDenied) {
             await _pasteService.openAccessibilitySettings();
             await _refreshPermissionStatus();
-            _showError('自动粘贴被系统拦截：请在"系统设置 > 隐私与安全性 > 辅助功能"允许本应用发送按键（文本已复制到剪贴板）');
+            _showError(
+              '自动粘贴被系统拦截：请在"系统设置 > 隐私与安全性 > 辅助功能"允许本应用发送按键（文本已复制到剪贴板）',
+            );
             return;
           }
 
@@ -600,10 +728,12 @@ class _VerbatimAppState extends State<VerbatimApp> {
             setState(() {
               _status = AppStatus.done;
               _resultText = textToPaste;
+              _rawResultText = result.text;
+              _resultModeId = _settings.activePromptId;
             });
           }
           if (!mounted) return;
-          await windowManager.setSize(const Size(350, 180));
+          await windowManager.setSize(const Size(980, 560));
           await _positionWindow();
           await windowManager.show();
         }
@@ -611,7 +741,9 @@ class _VerbatimAppState extends State<VerbatimApp> {
         final String msg;
         if (result.isSuccess && result.text.isEmpty) {
           msg = '未识别到语音内容（服务器返回空文本）';
-        } else if (!result.isSuccess && result.error != null && result.error!.isNotEmpty) {
+        } else if (!result.isSuccess &&
+            result.error != null &&
+            result.error!.isNotEmpty) {
           msg = '识别失败: ${result.error}';
         } else if (!result.isSuccess) {
           msg = '识别失败 (code: ${result.code})';
@@ -664,21 +796,39 @@ class _VerbatimAppState extends State<VerbatimApp> {
       return rawText;
     }
 
-    return _llmService.process(
+    final llmOutput = await _llmService.process(
       text: rawText,
       systemPrompt: activePrompt.systemPrompt,
       apiKey: _settings.llmApiKey,
       baseUrl: resolvedBaseUrl,
       model: _settings.llmModel,
     );
+
+    // Logic mode now prefers structure but does not enforce a fixed template.
+    if (activePrompt.id == 'logic') {
+      return _cleanupLlmOutput(llmOutput, rawText);
+    }
+
+    return llmOutput;
+  }
+
+  String _cleanupLlmOutput(String output, String fallbackText) {
+    final cleaned = output
+        .replaceAll('```', '')
+        .replaceAll(RegExp(r'^\s*[-*]\s*', multiLine: true), '')
+        .trim();
+    return cleaned.isEmpty ? fallbackText : cleaned;
   }
 
   // ── Helpers ───────────────────────────────────────────────────────
 
   Future<void> _showError(String message) async {
+    _modeHintTimer?.cancel();
     setState(() {
       _status = AppStatus.error;
       _errorMessage = message;
+      _modeHintVisible = false;
+      _modeHintInline = false;
     });
     _pasteTargetBundleId = null;
     await _showOverlay();
@@ -695,10 +845,52 @@ class _VerbatimAppState extends State<VerbatimApp> {
     });
   }
 
+  Future<void> _showModeHint(String message) async {
+    _modeHintTimer?.cancel();
+    final inline = _settingsVisible || _historyVisible || _showSetupWizard;
+    if (mounted) {
+      setState(() {
+        _modeHintText = message;
+        _modeHintVisible = true;
+        _modeHintInline = inline;
+      });
+    }
+
+    if (!inline) {
+      await windowManager.setSize(const Size(280, 72));
+      await _positionModeHintWindow();
+      await windowManager.show();
+    }
+
+    _modeHintTimer = Timer(const Duration(milliseconds: 1100), () {
+      if (!mounted) return;
+      if (_modeHintVisible && _status == AppStatus.idle) {
+        if (_modeHintInline) {
+          setState(() {
+            _modeHintVisible = false;
+            _modeHintInline = false;
+          });
+          return;
+        }
+        windowManager.hide();
+        setState(() {
+          _modeHintVisible = false;
+          _modeHintInline = false;
+        });
+      }
+    });
+  }
+
   Future<void> _showOverlay() async {
     await windowManager.setSize(const Size(280, 80));
     await _positionWindow();
     await windowManager.show();
+  }
+
+  Future<void> _positionModeHintWindow() async {
+    await windowManager.setAlignment(Alignment.bottomRight);
+    final pos = await windowManager.getPosition();
+    await windowManager.setPosition(Offset(pos.dx - 24, pos.dy - 24));
   }
 
   Future<void> _positionWindow({bool forSettings = false}) async {
@@ -716,7 +908,26 @@ class _VerbatimAppState extends State<VerbatimApp> {
     setState(() {
       _status = AppStatus.idle;
       _settingsVisible = false;
+      _resultText = '';
+      _rawResultText = '';
+      _resultModeId = 'direct';
+      _modeHintInline = false;
+      _modeHintVisible = false;
     });
+  }
+
+  Widget _buildPageWithInlineModeHint(Widget child) {
+    if (!_modeHintVisible || !_modeHintInline) return child;
+    return Stack(
+      children: [
+        child,
+        Positioned(
+          right: 16,
+          bottom: 16,
+          child: IgnorePointer(child: ModeSwitchHintCard(message: _modeHintText)),
+        ),
+      ],
+    );
   }
 
   // ── Build ─────────────────────────────────────────────────────────
@@ -743,34 +954,68 @@ class _VerbatimAppState extends State<VerbatimApp> {
       );
     }
 
+    if (_modeHintVisible && !_modeHintInline) {
+      return ModeSwitchOverlay(message: _modeHintText);
+    }
+
     // Result popup (paste failed fallback)
     if (_status == AppStatus.done) {
-      return ResultPopup(text: _resultText, onDismiss: _dismissResult);
+      return ResultPopup(
+        rawText: _rawResultText,
+        processedText: _resultText,
+        modeTitle: _modeNameById(_resultModeId),
+        structured: _isStructuredMode(_resultModeId),
+        onDismiss: _dismissResult,
+      );
     }
 
     // Setup wizard (first launch)
     if (_showSetupWizard) {
-      return SetupWizardScreen(
+      return _buildPageWithInlineModeHint(
+        SetupWizardScreen(
         pasteService: _pasteService,
         installService: _installService,
+        asrProviderKey: _settings.asrProviderKey,
+        onAsrProviderKeyChanged: (providerKey) async {
+          final updated = _settings.copyWith(asrProviderKey: providerKey);
+          if (!mounted) return;
+          setState(() => _settings = updated);
+          await widget.settingsService.save(updated);
+          _buildCloudAsrService(updated);
+        },
+        modelDownloadSource: _settings.modelDownloadSource,
+        modelDownloadMirrorUrl: _settings.modelDownloadMirrorUrl,
+        onModelDownloadConfigChanged: (source, mirrorUrl) async {
+          final updated = _settings.copyWith(
+            modelDownloadSource: source,
+            modelDownloadMirrorUrl: mirrorUrl,
+          );
+          if (!mounted) return;
+          setState(() => _settings = updated);
+          await widget.settingsService.save(updated);
+        },
         onComplete: _onSetupComplete,
         onSkip: _onSetupSkip,
+        ),
       );
     }
 
     // History panel
     if (_historyVisible) {
-      return HistoryScreen(
+      return _buildPageWithInlineModeHint(
+        HistoryScreen(
         entries: _historyEntries,
         onBack: _backFromHistory,
         onDelete: _deleteHistoryEntry,
         onClearAll: _clearHistory,
+        ),
       );
     }
 
     // Settings panel
     if (_settingsVisible) {
-      return SettingsScreen(
+      return _buildPageWithInlineModeHint(
+        SettingsScreen(
         onQuit: _quit,
         settings: _settings,
         onSettingsChanged: _onSettingsChanged,
@@ -789,6 +1034,7 @@ class _VerbatimAppState extends State<VerbatimApp> {
         onRequestAccessibilityPermission: _requestAccessibilityPermission,
         onRequestMicrophonePermission: _requestMicrophonePermission,
         onShowHistory: _showHistory,
+        ),
       );
     }
 

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -61,23 +62,50 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   late TextEditingController _asrUrlController;
   late TextEditingController _asrApiKeyController;
+  late TextEditingController _iflytekAppIdController;
+  late TextEditingController _iflytekApiKeyController;
+  late TextEditingController _iflytekApiSecretController;
   late TextEditingController _asrModelController;
   late TextEditingController _asrCustomUrlController;
+  late TextEditingController _modelDownloadMirrorUrlController;
   late TextEditingController _apiKeyController;
   late TextEditingController _baseUrlController;
   late TextEditingController _modelTextController;
   bool _permissionBusy = false;
+  bool _syncingIflytekFields = false;
+
+  static const List<({String key, String label})> _modelSourceOptions = [
+    (key: 'auto', label: 'ModelScope 默认源'),
+    (key: 'hf_official', label: 'HuggingFace 官方'),
+    (key: 'hf_mirror', label: 'HuggingFace 镜像（推荐）'),
+    (key: 'custom_hf_mirror', label: '自定义 HuggingFace 镜像'),
+  ];
 
   @override
   void initState() {
     super.initState();
     _asrUrlController = TextEditingController(text: widget.settings.asrBaseUrl);
-    _asrApiKeyController = TextEditingController(text: widget.settings.asrApiKey);
+    _asrApiKeyController = TextEditingController(
+      text: widget.settings.asrApiKey,
+    );
+    _iflytekAppIdController = TextEditingController();
+    _iflytekApiKeyController = TextEditingController();
+    _iflytekApiSecretController = TextEditingController();
+    _syncIflytekFieldsFromCombined(widget.settings.asrApiKey);
     _asrModelController = TextEditingController(text: widget.settings.asrModel);
-    _asrCustomUrlController = TextEditingController(text: widget.settings.asrCustomUrl);
+    _asrCustomUrlController = TextEditingController(
+      text: widget.settings.asrCustomUrl,
+    );
+    _modelDownloadMirrorUrlController = TextEditingController(
+      text: widget.settings.modelDownloadMirrorUrl,
+    );
     _apiKeyController = TextEditingController(text: widget.settings.llmApiKey);
-    _baseUrlController = TextEditingController(text: widget.settings.llmBaseUrl);
-    _modelTextController = TextEditingController(text: widget.settings.llmModel);
+    _baseUrlController = TextEditingController(
+      text: widget.settings.llmBaseUrl,
+    );
+    _modelTextController = TextEditingController(
+      text: widget.settings.llmModel,
+    );
   }
 
   @override
@@ -88,12 +116,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     if (oldWidget.settings.asrApiKey != widget.settings.asrApiKey) {
       _asrApiKeyController.text = widget.settings.asrApiKey;
+      _syncIflytekFieldsFromCombined(widget.settings.asrApiKey);
     }
     if (oldWidget.settings.asrModel != widget.settings.asrModel) {
       _asrModelController.text = widget.settings.asrModel;
     }
     if (oldWidget.settings.asrCustomUrl != widget.settings.asrCustomUrl) {
       _asrCustomUrlController.text = widget.settings.asrCustomUrl;
+    }
+    if (oldWidget.settings.modelDownloadMirrorUrl !=
+        widget.settings.modelDownloadMirrorUrl) {
+      _modelDownloadMirrorUrlController.text =
+          widget.settings.modelDownloadMirrorUrl;
     }
     if (oldWidget.settings.llmApiKey != widget.settings.llmApiKey) {
       _apiKeyController.text = widget.settings.llmApiKey;
@@ -110,8 +144,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void dispose() {
     _asrUrlController.dispose();
     _asrApiKeyController.dispose();
+    _iflytekAppIdController.dispose();
+    _iflytekApiKeyController.dispose();
+    _iflytekApiSecretController.dispose();
     _asrModelController.dispose();
     _asrCustomUrlController.dispose();
+    _modelDownloadMirrorUrlController.dispose();
     _apiKeyController.dispose();
     _baseUrlController.dispose();
     _modelTextController.dispose();
@@ -123,9 +161,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool get _isLocalAsr => _s.asrProviderKey == 'local';
   LlmProvider? get _currentProvider => LlmProvider.findByKey(_s.llmProviderKey);
   List<PromptPreset> get _allPrompts => [
-        ...PromptPreset.defaults,
-        ..._s.customPrompts,
-      ];
+    ...PromptPreset.defaults,
+    ..._s.customPrompts,
+  ];
   PromptPreset? get _activePreset {
     for (final p in _allPrompts) {
       if (p.id == _s.activePromptId) return p;
@@ -137,71 +175,64 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox.expand(
-      child: _buildPanel(),
-    );
+    return SizedBox.expand(child: _buildPanel());
   }
 
   Widget _buildPanel() {
-    return Container(
-      margin: const EdgeInsets.all(6),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.borderDefault, width: 0.8),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(15.2),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
-          child: Container(
-            decoration: const BoxDecoration(
-              gradient: AppTheme.backgroundGradient,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHeader(),
-                const Divider(
-                  height: 1,
-                  thickness: 0.5,
-                  color: AppTheme.borderDefault,
-                ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 16,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildSectionLabel(
-                          _isLocalAsr ? '服务状态' : '语音识别引擎',
-                        ),
-                        const SizedBox(height: 8),
-                        _buildServerStatus(),
-                        const SizedBox(height: 20),
-                        _buildSectionLabel('快捷键'),
-                        const SizedBox(height: 8),
-                        _buildHotkeySection(),
-                        const SizedBox(height: 20),
-                        _buildSectionLabel('AI 后处理'),
-                        const SizedBox(height: 8),
-                        _buildLlmSection(),
-                        const SizedBox(height: 20),
-                        _buildSectionLabel('提示词'),
-                        const SizedBox(height: 8),
-                        _buildPromptSection(),
-                        const SizedBox(height: 20),
-                        _buildPermissionNote(),
-                        const SizedBox(height: 24),
-                        _buildQuitButton(),
-                      ],
-                    ),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 32, sigmaY: 32),
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: AppTheme.backgroundGradient,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildHeader(),
+              const Divider(
+                height: 1,
+                thickness: 0.5,
+                color: AppTheme.borderDefault,
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 16,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildSectionLabel(_isLocalAsr ? '服务状态' : '语音识别引擎'),
+                      const SizedBox(height: 8),
+                      _buildServerStatus(),
+                      const SizedBox(height: 20),
+                      _buildSectionLabel('快捷键'),
+                      const SizedBox(height: 8),
+                      _buildHotkeySection(),
+                      const SizedBox(height: 20),
+                      _buildSectionLabel('AI 后处理'),
+                      const SizedBox(height: 8),
+                      _buildLlmSection(),
+                      const SizedBox(height: 20),
+                      _buildSectionLabel('提示词'),
+                      const SizedBox(height: 8),
+                      _buildPromptSection(),
+                      const SizedBox(height: 20),
+                      _buildSectionLabel('输出预览'),
+                      const SizedBox(height: 8),
+                      _buildOutputPreviewSection(),
+                      const SizedBox(height: 20),
+                      _buildPermissionNote(),
+                      const SizedBox(height: 24),
+                      _buildQuitButton(),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -240,10 +271,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(width: 8),
           const Text(
             'v2.1',
-            style: TextStyle(
-              color: AppTheme.textMuted,
-              fontSize: 12,
-            ),
+            style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
           ),
         ],
       ),
@@ -344,7 +372,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     }
 
-    final isDownloading = _isLocalAsr &&
+    final isDownloading =
+        _isLocalAsr &&
         widget.downloadProgress > 0 &&
         (status == FunasrServerStatus.starting ||
             status == FunasrServerStatus.loadingModels);
@@ -355,6 +384,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           // Provider dropdown — always at the top
+          _asrStrategyHint(),
+          const SizedBox(height: 10),
           _fieldLabel('服务商', enabled: true),
           const SizedBox(height: 4),
           _asrProviderDropdown(),
@@ -419,14 +450,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             if (isDownloading) ...[
               const SizedBox(height: 10),
-              const Divider(height: 1, thickness: 0.5, color: AppTheme.borderSubtle),
+              const Divider(
+                height: 1,
+                thickness: 0.5,
+                color: AppTheme.borderSubtle,
+              ),
               const SizedBox(height: 10),
               Row(
                 children: [
-                  const Icon(Icons.download_rounded, size: 13, color: AppTheme.warningOrange),
+                  const Icon(
+                    Icons.download_rounded,
+                    size: 13,
+                    color: AppTheme.warningOrange,
+                  ),
                   const SizedBox(width: 6),
                   const Text(
-                    '首次使用需下载语音识别模型（约 1 GB）',
+                    '首次使用需下载语音识别模型（约 300~500 MB）',
                     style: TextStyle(
                       color: AppTheme.textSecondary,
                       fontSize: 11.5,
@@ -451,7 +490,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   value: widget.downloadProgress,
                   minHeight: 3,
                   backgroundColor: AppTheme.borderDefault,
-                  valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.warningOrange),
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    AppTheme.warningOrange,
+                  ),
                 ),
               ),
               if (widget.downloadLabel != null) ...[
@@ -463,6 +504,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     fontSize: 11,
                     fontFeatures: [FontFeature.tabularFigures()],
                   ),
+                ),
+              ] else ...[
+                const SizedBox(height: 5),
+                const Text(
+                  '下载速度受网络影响，慢速网络下可能需要几分钟',
+                  style: TextStyle(color: AppTheme.textMuted, fontSize: 11),
                 ),
               ],
             ],
@@ -501,25 +548,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
               hint: 'http://localhost:10095',
               onChanged: (v) => _update(_s.copyWith(asrBaseUrl: v)),
             ),
+            const SizedBox(height: 10),
+            _fieldLabel('模型下载源', enabled: true),
+            const SizedBox(height: 4),
+            _modelSourceDropdown(),
+            if (_s.modelDownloadSource == 'custom_hf_mirror') ...[
+              const SizedBox(height: 8),
+              _fieldLabel('自定义镜像 URL', enabled: true),
+              const SizedBox(height: 4),
+              _textField(
+                controller: _modelDownloadMirrorUrlController,
+                enabled: true,
+                hint: 'https://hf-mirror.com',
+                onChanged: (v) =>
+                    _update(_s.copyWith(modelDownloadMirrorUrl: v.trim())),
+              ),
+            ],
+            const SizedBox(height: 6),
+            const Text(
+              '下载慢时可切换到 HuggingFace 镜像；该设置会影响向导下载和服务器自动拉取模型。',
+              style: TextStyle(color: AppTheme.textMuted, fontSize: 11.5),
+            ),
           ] else ...[
             // ── Cloud ASR UI ─────────────────────────────────────────
             const SizedBox(height: 10),
-            _fieldLabel(
-              _s.asrProviderKey == 'iflytek'
-                  ? 'AppID:APIKey:APISecret'
-                  : 'API Key',
-              enabled: true,
-            ),
-            const SizedBox(height: 4),
-            _textField(
-              controller: _asrApiKeyController,
-              enabled: true,
-              obscureText: true,
-              hint: _s.asrProviderKey == 'iflytek'
-                  ? 'f12f0d90:c5fa7d39...:Nzc2Mjhm...'
-                  : '输入 API Key',
-              onChanged: (v) => _update(_s.copyWith(asrApiKey: v)),
-            ),
+            if (_s.asrProviderKey == 'iflytek')
+              _buildIflytekCredentialFields()
+            else ...[
+              _fieldLabel('API Key', enabled: true),
+              const SizedBox(height: 4),
+              _textField(
+                controller: _asrApiKeyController,
+                enabled: true,
+                obscureText: true,
+                hint: '输入 API Key',
+                onChanged: (v) => _update(_s.copyWith(asrApiKey: v)),
+              ),
+            ],
             const SizedBox(height: 10),
             _fieldLabel(
               _s.asrProviderKey == 'iflytek' ? '语言' : '模型',
@@ -547,6 +612,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
             const SizedBox(height: 8),
             _asrInfoHint(),
+            const SizedBox(height: 4),
+            _asrApiKeyLink(),
           ],
         ],
       ),
@@ -558,31 +625,135 @@ class _SettingsScreenState extends State<SettingsScreen> {
       initialValue: _s.asrProviderKey,
       decoration: _dropdownDecoration(true),
       dropdownColor: const Color(0xFFE2E8F5),
-      style: const TextStyle(
-        color: AppTheme.textPrimary,
-        fontSize: 13,
-      ),
+      style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13),
       iconEnabledColor: AppTheme.textTertiary,
       items: AsrProvider.builtIn.map((p) {
-        return DropdownMenuItem(value: p.key, child: Text(p.name));
+        return DropdownMenuItem(
+          value: p.key,
+          child: Text(_asrProviderDisplayName(p)),
+        );
       }).toList(),
       onChanged: (key) {
         if (key == null) return;
         final provider = AsrProvider.findByKey(key);
         if (provider == null) return;
         _asrModelController.text = provider.defaultModel;
-        _update(_s.copyWith(
-          asrProviderKey: key,
-          asrModel: provider.defaultModel,
-        ));
+        _update(
+          _s.copyWith(asrProviderKey: key, asrModel: provider.defaultModel),
+        );
       },
     );
+  }
+
+  Widget _modelSourceDropdown() {
+    final current =
+        _modelSourceOptions.any((o) => o.key == _s.modelDownloadSource)
+        ? _s.modelDownloadSource
+        : 'auto';
+    return DropdownButtonFormField<String>(
+      initialValue: current,
+      decoration: _dropdownDecoration(true),
+      dropdownColor: const Color(0xFFE2E8F5),
+      style: const TextStyle(color: AppTheme.textPrimary, fontSize: 13),
+      iconEnabledColor: AppTheme.textTertiary,
+      items: _modelSourceOptions
+          .map(
+            (item) =>
+                DropdownMenuItem(value: item.key, child: Text(item.label)),
+          )
+          .toList(),
+      onChanged: (value) {
+        if (value == null) return;
+        _update(_s.copyWith(modelDownloadSource: value));
+      },
+    );
+  }
+
+  String _asrProviderDisplayName(AsrProvider provider) {
+    final site = _asrProviderApiSite(provider.key);
+    if (site == null) return provider.name;
+    return '${provider.name} · $site';
+  }
+
+  String? _asrProviderApiSite(String key) {
+    switch (key) {
+      case 'iflytek':
+        return 'console.xfyun.cn';
+      case 'siliconflow':
+        return 'siliconflow.cn';
+      case 'openai':
+        return 'platform.openai.com';
+      case 'groq':
+        return 'console.groq.com';
+      default:
+        return null;
+    }
+  }
+
+  String? _asrProviderApiUrl(String key) {
+    switch (key) {
+      case 'iflytek':
+        return 'https://console.xfyun.cn';
+      case 'siliconflow':
+        return 'https://siliconflow.cn';
+      case 'openai':
+        return 'https://platform.openai.com';
+      case 'groq':
+        return 'https://console.groq.com';
+      default:
+        return null;
+    }
+  }
+
+  List<String>? _parseIflytekCredential(String value) {
+    final parts = value.trim().split(':');
+    if (parts.length != 3) return null;
+    return parts.map((p) => p.trim()).toList();
+  }
+
+  void _syncIflytekFieldsFromCombined(String combined) {
+    final parts = _parseIflytekCredential(combined) ?? ['', '', ''];
+    _syncingIflytekFields = true;
+    _iflytekAppIdController.text = parts[0];
+    _iflytekApiKeyController.text = parts[1];
+    _iflytekApiSecretController.text = parts[2];
+    _syncingIflytekFields = false;
+  }
+
+  String _composeIflytekCredential() {
+    final appId = _iflytekAppIdController.text.trim();
+    final apiKey = _iflytekApiKeyController.text.trim();
+    final apiSecret = _iflytekApiSecretController.text.trim();
+    if (appId.isEmpty && apiKey.isEmpty && apiSecret.isEmpty) {
+      return '';
+    }
+    return '$appId:$apiKey:$apiSecret';
+  }
+
+  void _onIflytekFieldChanged(String value) {
+    if (_syncingIflytekFields) return;
+
+    final parsed = _parseIflytekCredential(value);
+    if (parsed != null) {
+      _syncingIflytekFields = true;
+      _iflytekAppIdController.text = parsed[0];
+      _iflytekApiKeyController.text = parsed[1];
+      _iflytekApiSecretController.text = parsed[2];
+      _syncingIflytekFields = false;
+      _update(_s.copyWith(asrApiKey: parsed.join(':')));
+      return;
+    }
+
+    _update(_s.copyWith(asrApiKey: _composeIflytekCredential()));
   }
 
   Widget _asrInfoHint() {
     final key = _s.asrProviderKey;
     final String hint;
     switch (key) {
+      case 'local':
+        hint = '离线可用：需安装 Python FunASR 并下载本地模型（约 300~500 MB）';
+        break;
       case 'openai':
         hint = '在 platform.openai.com 注册获取 API Key';
         break;
@@ -593,7 +764,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         hint = '在 siliconflow.cn 注册获取免费 API Key';
         break;
       case 'iflytek':
-        hint = '在 console.xfyun.cn 创建应用，填入 AppID:APIKey:APISecret';
+        hint = '推荐优先使用：在 console.xfyun.cn 创建应用，填入 AppID:APIKey:APISecret';
         break;
       default:
         return const SizedBox.shrink();
@@ -609,10 +780,112 @@ class _SettingsScreenState extends State<SettingsScreen> {
         Expanded(
           child: Text(
             hint,
-            style: const TextStyle(
-              color: AppTheme.textMuted,
-              fontSize: 11.5,
+            style: const TextStyle(color: AppTheme.textMuted, fontSize: 11.5),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildIflytekCredentialFields() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _fieldLabel('APPID', enabled: true),
+        const SizedBox(height: 4),
+        _textField(
+          controller: _iflytekAppIdController,
+          enabled: true,
+          hint: '例如：ee8e8087',
+          onChanged: _onIflytekFieldChanged,
+        ),
+        const SizedBox(height: 8),
+        _fieldLabel('APIKey', enabled: true),
+        const SizedBox(height: 4),
+        _textField(
+          controller: _iflytekApiKeyController,
+          enabled: true,
+          hint: '例如：929fbe48b0d8c14cea0daadd29e8ed02',
+          onChanged: _onIflytekFieldChanged,
+        ),
+        const SizedBox(height: 8),
+        _fieldLabel('APISecret', enabled: true),
+        const SizedBox(height: 4),
+        _textField(
+          controller: _iflytekApiSecretController,
+          enabled: true,
+          obscureText: true,
+          hint: '输入 APISecret',
+          onChanged: _onIflytekFieldChanged,
+        ),
+        const SizedBox(height: 6),
+        const Text(
+          '可把“APPID:APIKey:APISecret”整串粘贴到任意输入框，会自动拆分。',
+          style: TextStyle(color: AppTheme.textMuted, fontSize: 11.5),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _openExternalUrl(String url) async {
+    try {
+      final result = await Process.run('open', [url]);
+      if (result.exitCode != 0) {
+        debugPrint('[Settings] open url failed: ${result.stderr}');
+      }
+    } catch (e) {
+      debugPrint('[Settings] open url exception: $e');
+    }
+  }
+
+  Widget _asrApiKeyLink() {
+    final url = _asrProviderApiUrl(_s.asrProviderKey);
+    if (url == null) return const SizedBox.shrink();
+    final host = Uri.parse(url).host;
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: GestureDetector(
+          onTap: () => _openExternalUrl(url),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.open_in_new_rounded,
+                  size: 12,
+                  color: AppTheme.accentPrimary,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '获取 API Key：$host',
+                  style: const TextStyle(
+                    color: AppTheme.accentPrimary,
+                    fontSize: 11.5,
+                    decoration: TextDecoration.underline,
+                    decorationColor: AppTheme.accentPrimary,
+                  ),
+                ),
+              ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _asrStrategyHint() {
+    return Row(
+      children: const [
+        Icon(Icons.recommend_rounded, size: 12, color: AppTheme.textMuted),
+        SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            '推荐顺序：API 配置（首推讯飞）→ 其他云端服务 → 本地 FunASR（离线备选）',
+            style: TextStyle(color: AppTheme.textMuted, fontSize: 11.5),
           ),
         ),
       ],
@@ -622,15 +895,77 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // ── Hotkey ─────────────────────────────────────────────────────────
 
   Widget _buildHotkeySection() {
-    return _card(
-      child: HotkeyPicker(
-        currentKey: _s.hotkeyKey,
-        currentModifiers: _s.hotkeyModifiers,
-        onHotkeyChanged: (key, modifiers) {
-          _update(_s.copyWith(hotkeyKey: key, hotkeyModifiers: modifiers));
-        },
-        onListeningStateChanged: widget.onHotkeyListeningStateChanged,
-      ),
+    return Column(
+      children: [
+        _card(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '录音热键（按下开始，松开结束）',
+                style: TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              HotkeyPicker(
+                currentKey: _s.hotkeyKey,
+                currentModifiers: _s.hotkeyModifiers,
+                description: '按住快捷键开始录音',
+                onHotkeyChanged: (key, modifiers) {
+                  _update(
+                    _s.copyWith(hotkeyKey: key, hotkeyModifiers: modifiers),
+                  );
+                },
+                onListeningStateChanged: widget.onHotkeyListeningStateChanged,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '推荐直接使用 Fn，支持纯单键触发。',
+                style: TextStyle(color: AppTheme.textMuted, fontSize: 11.5),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        _card(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '模式切换热键（按住触发一次）',
+                style: TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              HotkeyPicker(
+                currentKey: _s.modeSwitchHotkeyKey,
+                currentModifiers: _s.modeSwitchHotkeyModifiers,
+                description: '按住快捷键切换模式',
+                onHotkeyChanged: (key, modifiers) {
+                  _update(
+                    _s.copyWith(
+                      modeSwitchHotkeyKey: key,
+                      modeSwitchHotkeyModifiers: modifiers,
+                    ),
+                  );
+                },
+                onListeningStateChanged: widget.onHotkeyListeningStateChanged,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '用于在 直接输出 / 逻辑优化 / Code 模式 间快速切换。',
+                style: TextStyle(color: AppTheme.textMuted, fontSize: 11.5),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -728,17 +1063,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
               if (key == null) return;
               final provider = LlmProvider.findByKey(key);
               if (provider == null) return;
-              final newModel =
-                  provider.models.isNotEmpty ? provider.models.first : '';
-              final newBaseUrl =
-                  key == 'custom' ? _s.llmBaseUrl : provider.baseUrl;
+              final newModel = provider.models.isNotEmpty
+                  ? provider.models.first
+                  : '';
+              final newBaseUrl = key == 'custom'
+                  ? _s.llmBaseUrl
+                  : provider.baseUrl;
               _baseUrlController.text = newBaseUrl;
               _modelTextController.text = newModel;
-              _update(_s.copyWith(
-                llmProviderKey: key,
-                llmBaseUrl: newBaseUrl,
-                llmModel: newModel,
-              ));
+              _update(
+                _s.copyWith(
+                  llmProviderKey: key,
+                  llmBaseUrl: newBaseUrl,
+                  llmModel: newModel,
+                ),
+              );
             }
           : null,
     );
@@ -773,12 +1112,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   InputDecoration _dropdownDecoration(bool enabled) {
     return InputDecoration(
       isDense: true,
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       filled: true,
-      fillColor: enabled
-          ? const Color(0x0D2060C8)
-          : const Color(0x06000000),
+      fillColor: enabled ? const Color(0x0D2060C8) : const Color(0x06000000),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppTheme.radiusSM),
         borderSide: const BorderSide(color: AppTheme.borderDefault, width: 0.8),
@@ -789,10 +1125,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       disabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(AppTheme.radiusSM),
-        borderSide: const BorderSide(
-          color: AppTheme.borderSubtle,
-          width: 0.8,
-        ),
+        borderSide: const BorderSide(color: AppTheme.borderSubtle, width: 0.8),
       ),
     );
   }
@@ -831,9 +1164,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           fontSize: 13,
         ),
         filled: true,
-        fillColor: enabled
-            ? const Color(0x0D2060C8)
-            : const Color(0x06000000),
+        fillColor: enabled ? const Color(0x0D2060C8) : const Color(0x06000000),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppTheme.radiusSM),
           borderSide: const BorderSide(
@@ -886,10 +1217,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ActionChip(
                 label: const Text(
                   '+ 自定义',
-                  style: TextStyle(
-                    color: AppTheme.accentPrimary,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: AppTheme.accentPrimary, fontSize: 12),
                 ),
                 backgroundColor: const Color(0x0D2060C8),
                 side: const BorderSide(
@@ -910,10 +1238,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               decoration: BoxDecoration(
                 color: const Color(0x08FFFFFF),
                 borderRadius: BorderRadius.circular(AppTheme.radiusSM),
-                border: Border.all(
-                  color: AppTheme.borderSubtle,
-                  width: 0.8,
-                ),
+                border: Border.all(color: AppTheme.borderSubtle, width: 0.8),
               ),
               child: Text(
                 active.systemPrompt,
@@ -927,6 +1252,164 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOutputPreviewSection() {
+    return Column(
+      children: [
+        _previewScenarioCard(
+          scene: '场景 A',
+          title: '直接输出',
+          spoken: '呃 把昨天讨论的需求 嗯 整理一下 就是 大概是 用户可以自定义快捷键 然后 支持多语言 还有就是 历史记录功能',
+          result: '把昨天讨论的需求整理一下，大概是用户可以自定义快捷键，支持多语言，还有历史记录功能。',
+          darkResult: false,
+        ),
+        const SizedBox(height: 10),
+        _previewScenarioCard(
+          scene: '场景 B',
+          title: '逻辑优化 (LLM)',
+          spoken: '嗯 其实主要有三个需求 第一是快捷键 用户可以自己设置的那种 然后语言 这块要支持多语言 最后历史记录也得有',
+          result:
+              '用户需求如下：\n'
+              '1. 自定义快捷键：用户可自行配置\n'
+              '2. 多语言支持\n'
+              '3. 历史记录：方便回顾内容',
+          darkResult: true,
+        ),
+      ],
+    );
+  }
+
+  Widget _previewScenarioCard({
+    required String scene,
+    required String title,
+    required String spoken,
+    required String result,
+    required bool darkResult,
+  }) {
+    return _card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F1D59),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  scene,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: const TextStyle(
+                  color: AppTheme.textPrimary,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.4,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0x0F2060C8),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSM),
+                    border: Border.all(
+                      color: AppTheme.borderSubtle,
+                      width: 0.8,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '你说：',
+                        style: TextStyle(
+                          color: AppTheme.textMuted,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '「$spoken」',
+                        style: const TextStyle(
+                          color: Color(0xFF586179),
+                          fontSize: 13.5,
+                          height: 1.55,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: darkResult
+                        ? const Color(0xFF0D0F14)
+                        : const Color(0xFFF1F4FA),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSM),
+                    border: Border.all(
+                      color: darkResult
+                          ? const Color(0x401F7AE0)
+                          : AppTheme.borderSubtle,
+                      width: 0.8,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        darkResult ? '结构化输出：' : '粘贴结果：',
+                        style: TextStyle(
+                          color: darkResult
+                              ? const Color(0x80FFFFFF)
+                              : AppTheme.textMuted,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        result,
+                        style: TextStyle(
+                          color: darkResult
+                              ? Colors.white
+                              : AppTheme.textPrimary,
+                          fontSize: 13.5,
+                          height: 1.55,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -1058,14 +1541,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           TextButton(
             onPressed: () {
-              final newCustom =
-                  _s.customPrompts.where((p) => p.id != preset.id).toList();
-              final newActiveId =
-                  _s.activePromptId == preset.id ? 'direct' : _s.activePromptId;
-              _update(_s.copyWith(
-                customPrompts: newCustom,
-                activePromptId: newActiveId,
-              ));
+              final newCustom = _s.customPrompts
+                  .where((p) => p.id != preset.id)
+                  .toList();
+              final newActiveId = _s.activePromptId == preset.id
+                  ? 'direct'
+                  : _s.activePromptId;
+              _update(
+                _s.copyWith(
+                  customPrompts: newCustom,
+                  activePromptId: newActiveId,
+                ),
+              );
               Navigator.pop(ctx);
             },
             child: const Text(
@@ -1094,18 +1581,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
         fillColor: const Color(0x0D2060C8),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppTheme.radiusSM),
-          borderSide: const BorderSide(color: AppTheme.borderDefault, width: 0.8),
+          borderSide: const BorderSide(
+            color: AppTheme.borderDefault,
+            width: 0.8,
+          ),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppTheme.radiusSM),
-          borderSide: const BorderSide(color: AppTheme.borderDefault, width: 0.8),
+          borderSide: const BorderSide(
+            color: AppTheme.borderDefault,
+            width: 0.8,
+          ),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppTheme.radiusSM),
-          borderSide: const BorderSide(color: AppTheme.accentPrimary, width: 1.0),
+          borderSide: const BorderSide(
+            color: AppTheme.accentPrimary,
+            width: 1.0,
+          ),
         ),
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: 10,
+        ),
       ),
     );
   }
@@ -1263,10 +1762,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 shape: BoxShape.circle,
                 color: color,
                 boxShadow: [
-                  BoxShadow(
-                    color: color.withValues(alpha: 0.4),
-                    blurRadius: 5,
-                  ),
+                  BoxShadow(color: color.withValues(alpha: 0.4), blurRadius: 5),
                 ],
               ),
             ),
@@ -1309,17 +1805,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           decoration: BoxDecoration(
             color: const Color(0x0D2060C8),
             borderRadius: BorderRadius.circular(AppTheme.radiusSM),
-            border: Border.all(
-              color: AppTheme.borderDefault,
-              width: 0.8,
-            ),
+            border: Border.all(color: AppTheme.borderDefault, width: 0.8),
           ),
           child: Text(
             _permissionBusy ? '处理中...' : label,
-            style: const TextStyle(
-              color: AppTheme.textSecondary,
-              fontSize: 12,
-            ),
+            style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
           ),
         ),
       ),
@@ -1336,10 +1826,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           onTap: widget.onQuit,
           child: const Text(
             '退出 VERBATIM',
-            style: TextStyle(
-              color: AppTheme.textMuted,
-              fontSize: 12.5,
-            ),
+            style: TextStyle(color: AppTheme.textMuted, fontSize: 12.5),
           ),
         ),
       ),
@@ -1354,8 +1841,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _accentTextBtn(String label, VoidCallback? onPressed) {
     return MouseRegion(
-      cursor:
-          onPressed != null ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      cursor: onPressed != null
+          ? SystemMouseCursors.click
+          : SystemMouseCursors.basic,
       child: GestureDetector(
         onTap: onPressed,
         child: Container(

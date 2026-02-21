@@ -59,7 +59,9 @@ class PasteService {
   /// Best-effort capture of current frontmost app bundle id.
   Future<String?> getFrontmostBundleId() async {
     try {
-      final id = await _nativeInput.invokeMethod<String>('getFrontmostBundleId');
+      final id = await _nativeInput.invokeMethod<String>(
+        'getFrontmostBundleId',
+      );
       final normalized = id?.trim();
       if (normalized != null && normalized.isNotEmpty) {
         debugPrint('[Paste] frontmost bundle id (native): $normalized');
@@ -109,6 +111,7 @@ class PasteService {
         final success = response['success'] == true;
         final permissionDenied = response['permissionDenied'] == true;
         final error = response['error']?.toString();
+        final noWritableFocus = error?.contains('NO_WRITABLE_FOCUS') == true;
         debugPrint(
           '[Paste] native paste: success=$success, permissionDenied=$permissionDenied, error=$error',
         );
@@ -121,6 +124,11 @@ class PasteService {
             permissionDenied: true,
             error: error,
           );
+        }
+        if (noWritableFocus) {
+          // No writable caret/target exists. Return directly so UI can show
+          // fallback popup for manual copy/paste.
+          return PasteResult(success: false, error: error);
         }
         // Fall through to osascript fallback when native path fails unexpectedly.
       }
@@ -201,8 +209,7 @@ class PasteService {
   Future<void> openAccessibilitySettings() async {
     final now = DateTime.now();
     if (_lastPermissionPromptAt != null &&
-        now.difference(_lastPermissionPromptAt!) <
-            const Duration(seconds: 8)) {
+        now.difference(_lastPermissionPromptAt!) < const Duration(seconds: 8)) {
       debugPrint('[Paste] Skip repeated accessibility prompt (throttled)');
       return;
     }
