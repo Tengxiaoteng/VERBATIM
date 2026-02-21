@@ -1,6 +1,8 @@
 # VERBATIM
 
-> macOS 全局语音输入工具 — 按住快捷键录音，松开后自动识别并粘贴到当前光标位置。
+> 说话，文字直接出现在光标处。无需切换窗口，无需动手。
+
+[![⬇ 下载 macOS 安装包](https://img.shields.io/badge/⬇_下载-macOS_v1.0.0-2060C8?style=for-the-badge)](https://github.com/Tengxiaoteng/VERBATIM/releases/latest/download/VERBATIM-v1.0.0-macos.zip)
 
 ![Platform](https://img.shields.io/badge/platform-macOS-blue)
 ![Flutter](https://img.shields.io/badge/Flutter-3.38%2B-blue)
@@ -8,132 +10,48 @@
 
 ---
 
-## 功能
+## 为什么用 VERBATIM？
 
-- **全局快捷键**：按住 `Option + Space`（可自定义）触发录音，松开立即识别
-- **多种 ASR 来源**：
-  - 本地 FunASR（离线，隐私保护）
-  - OpenAI Whisper
-  - Groq（免费额度）
-  - SiliconFlow（中文优化）
-  - 讯飞 iFlytek IAT（中文优秀）
-  - 自定义兼容 OpenAI 接口的服务
-- **LLM 后处理**：识别文本可选择直接输出 / 逻辑优化 / Code 模式 / 自定义提示词
-- **自动粘贴**：识别完成后直接粘贴到原来的光标位置，无需切换窗口
-- **历史记录**：查看并复制历史识别结果
-- **系统托盘**：最小化到状态栏，常驻后台
+**打字太慢** — 说话比打字快 3 倍。长段文字、会议记录、备忘录，直接说出来，实时转文字。
+
+**手不离键盘** — 在任何应用里按住 `Option+Space`，松开后文字已经粘贴好，不用切窗口、不用点击任何按钮。
+
+**中文识别准** — 支持讯飞、SiliconFlow 等专为中文优化的服务，标点自动加，说完即可用。
 
 ---
 
-## 系统要求
+## 截图
 
-- macOS 12+
-- Flutter stable 3.38+（含 Dart 3.10+）
-- Xcode 15+
-- SoX（提供 `rec` 录音命令）
-
----
-
-## 快速开始
-
-### 1. 安装依赖
-
-```bash
-brew install sox
-flutter pub get
-```
-
-### 2. 运行
-
-```bash
-flutter run -d macos
-```
-
-首次启动会弹出配置向导，引导你选择 ASR 服务并授予权限。
-
-### 3. 构建发布版
-
-```bash
-flutter build macos --release
-```
-
-产物位于 `build/macos/Build/Products/Release/VERBATIM.app`。
+<table>
+  <tr>
+    <td><img src="screenshots/settings.png" width="380"/><br/><sub>多种识别服务可选</sub></td>
+    <td><img src="screenshots/prompts.png" width="380"/><br/><sub>自定义 LLM 后处理</sub></td>
+  </tr>
+</table>
 
 ---
 
-## 权限配置（重要）
+## 快速安装
 
-应用需要以下两项权限方能正常工作：
-
-| 权限 | 用途 | 配置路径 |
-|------|------|----------|
-| 麦克风 | 录音 | 系统设置 → 隐私与安全性 → 麦克风 |
-| 辅助功能 | 自动粘贴 | 系统设置 → 隐私与安全性 → 辅助功能 |
-
-> 如果自动粘贴失败，尝试在辅助功能列表中删除 VERBATIM 并重新添加。
+```
+1. brew install sox
+2. 下载解压 → VERBATIM.app 拖入应用程序
+3. 首次启动按提示授权麦克风 + 辅助功能
+4. 按住 Option+Space 说话，松开自动粘贴
+```
 
 ---
 
-## ASR 服务配置
-
-### 本地 FunASR（离线推荐）
-
-应用内置 FunASR 服务端脚本，可在本机运行：
-
-```bash
-# 安装依赖（需要 Python 3.8+）
-pip install funasr modelscope flask
-
-# 下载模型（首次需要，约 1GB）
-python assets/download_models.py
-
-# 启动服务
-python assets/funasr_server.py
-```
-
-服务默认监听 `http://localhost:10095`。
-
-### 云端服务
-
-在设置中填入对应 API Key：
+## 支持的 ASR 服务
 
 | 服务 | 凭证格式 | 获取地址 |
 |------|----------|----------|
+| 本地 FunASR（离线） | 无需 Key | — |
 | OpenAI Whisper | `sk-...` | platform.openai.com |
 | Groq | `gsk_...` | console.groq.com |
 | SiliconFlow | `sf-...` | siliconflow.cn |
 | 讯飞 iFlytek | `AppID:APIKey:APISecret` | console.xfyun.cn |
-| 自定义 | 任意 | — |
-
----
-
-## LLM 后处理
-
-在设置中配置 OpenAI 兼容接口（或留空跳过后处理）：
-
-- **直接输出**：原始识别文本，不做修改
-- **逻辑优化**：修正标点、语序，使文本更流畅
-- **Code 模式**：将语音描述转为代码片段
-- **自定义提示词**：可添加、删除自定义处理指令
-
----
-
-## 项目结构
-
-```
-lib/
-├── app.dart              # 核心逻辑（录音、识别、粘贴）
-├── main.dart             # 入口
-├── models/               # 数据模型（AsrProvider、AppSettings 等）
-├── screens/              # 界面（主悬浮条、设置、历史、结果弹窗）
-├── services/             # ASR / LLM 服务（HTTP / WebSocket）
-├── theme/                # 设计系统（AppTheme 颜色常量）
-└── widgets/              # 通用组件（GlassCard、GlassSwitch）
-assets/
-├── funasr_server.py      # 本地 FunASR HTTP 服务
-├── download_models.py    # 模型下载脚本
-└── tray_icon.png         # 系统托盘图标
-```
+| 自定义 OpenAI 兼容 | 任意 | — |
 
 ---
 
@@ -150,15 +68,6 @@ A: 检查辅助功能权限；在系统设置中将 VERBATIM 条目删除后重�
 
 **Q: 讯飞凭证格式**
 A: 在 [console.xfyun.cn](https://console.xfyun.cn) 创建应用后，将 AppID、APIKey、APISecret 按 `AppID:APIKey:APISecret` 格式填入。
-
----
-
-## 开发
-
-```bash
-flutter analyze   # 静态分析
-flutter test      # 单元测试
-```
 
 ---
 
